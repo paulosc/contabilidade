@@ -1,12 +1,17 @@
-import { FileSpreadsheet } from 'lucide-react'
 import { cn } from '../lib/utils'
 
-/** Marca do sistema. Trocar por um <img> quando houver logo definitiva. */
+/**
+ * Ícone da aplicação: recibo com o visto de conferido.
+ * É o mesmo desenho do favicon (public/favicon.svg) — mudou um, muda o outro.
+ */
 export function IconeMarca({ className }: { className?: string }) {
   return (
-    <span className={cn('flex items-center justify-center rounded-lg bg-indigo-600 text-white', className)}>
-      <FileSpreadsheet className="h-[60%] w-[60%]" />
-    </span>
+    <svg viewBox="0 0 512 512" role="img" aria-label="Contabilidade" className={cn('rounded-lg', className)}>
+      <rect width="512" height="512" rx="112" fill="currentColor" className="text-indigo-600" />
+      <path d="M160 120h192v252l-24 24-24-24-24 24-24-24-24 24-24-24-24 24-24-24Z" fill="#fff" />
+      <path d="M200 176h112M200 220h112M200 264h56" stroke="#4f46e5" strokeWidth="20" strokeLinecap="round" />
+      <path d="M216 322l32 32 56-56" fill="none" stroke="#10b981" strokeWidth="24" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
