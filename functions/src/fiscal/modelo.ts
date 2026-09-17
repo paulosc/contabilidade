@@ -148,6 +148,16 @@ export interface ConfiguracaoFiscal {
   sincronizacao: EstadoSincronizacao
   /** Ligada separadamente: nem toda empresa emite nota de serviço */
   nfseAtivo?: boolean
+  /** Apelido ou host do município na plataforma ABRASF, ex.: 'conceicaodosouros' */
+  municipioWebservice?: string
+  /** Inscrição municipal do prestador, exigida na consulta ABRASF */
+  inscricaoMunicipal?: string
+  importacaoMunicipal?: {
+    ultimaEm?: Timestamp
+    periodoDe?: string
+    periodoAte?: string
+    notasImportadas?: number
+  }
   sincronizacaoNfse?: EstadoSincronizacaoNfse
   atualizadoEm: Timestamp
 }
@@ -269,7 +279,11 @@ export interface EventoNotaServico {
 
 /** /empresas/{id}/notasServico/{chaveAcesso} — chave de 50 dígitos */
 export interface NotaServico {
+  /** Chave de 50 dígitos (ADN) ou id municipal quando a nota veio da prefeitura */
   chaveAcesso: string
+  /** De onde a nota veio: padrão nacional ou web service do município */
+  origem?: 'adn' | 'municipal'
+  codigoVerificacao?: string
   numero?: string
   serieDps?: string
   numeroDps?: string

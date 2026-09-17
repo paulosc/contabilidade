@@ -347,7 +347,12 @@ export function NotasServicoList() {
             <tbody className="divide-y divide-slate-100">
               {daPagina.map((n) => (
                 <tr key={n.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setSelecionada(n)}>
-                  <td className="px-4 py-3 font-medium text-slate-900">{n.numero ?? '—'}</td>
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    {n.numero ?? '—'}
+                    {n.origem === 'municipal' && (
+                      <span className="mt-0.5 block text-[10px] font-normal text-slate-400">sistema municipal</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <Badge tom={n.papel === 'prestador' ? 'verde' : n.papel === 'tomador' ? 'azul' : 'neutro'}>
                       {n.papel === 'prestador' ? 'Emitida' : n.papel === 'tomador' ? 'Recebida' : 'Outro'}

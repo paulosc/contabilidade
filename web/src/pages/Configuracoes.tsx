@@ -10,6 +10,7 @@ import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, Input, Select } fro
 import { formatCpfCnpj, formatData, formatTelefone, somenteDigitos, validarCnpj } from '../lib/utils'
 import { UFS } from '../lib/fiscal'
 import { FiscalCard } from './configuracoes/FiscalCard'
+import { ImportacaoMunicipalCard } from './configuracoes/ImportacaoMunicipalCard'
 import { OPERACOES_AUDITADAS, PAPEIS, type Membro, type RegistroAuditoria } from '../types'
 
 const schema = z.object({
@@ -132,6 +133,7 @@ export function Configuracoes() {
         </Card>
 
         <FiscalCard />
+        <ImportacaoMunicipalCard />
 
         <Card>
           <h2 className="mb-1 text-base font-semibold">Equipe</h2>

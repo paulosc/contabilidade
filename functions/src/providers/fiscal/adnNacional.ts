@@ -137,25 +137,38 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     return this.chamar(`/NFSe/${chave}/Eventos`)
   }
 
-  /** PDF do DANFSe. O ADN gera o documento auxiliar a partir do XML que ele já tem. */
+  /**
+   * PDF do DANFSe. O ADN gera o documento auxiliar a partir do XML que ele já tem.
+   *
+   * O manual escreve o método como `GET /danfse/{chaveAcesso}` e a tabela de APIs dá a base
+   * terminando em `/danfse`, o que deixa ambíguo se o segmento se repete. Como o Swagger exige
+   * certificado e não pôde ser lido, tentamos as duas formas e registramos qual respondeu.
+   */
   async danfse(chaveAcesso: string): Promise<Buffer> {
     const chave = (chaveAcesso ?? '').replace(/\D/g, '')
     if (chave.length !== 50) throw new Error('Chave de acesso da NFS-e deve ter 50 dígitos')
     const base = DANFSE_URLS[this.cfg.ambiente]
-    const r = await this.http(`/${chave}`, base)
-    if (r.status === 403) {
-      throw new Error('O ADN recusou a conexão (HTTP 403) ao gerar o PDF: confira o certificado digital.')
+    const tentativas: Array<{ url: string; status: number; tipo?: string }> = []
+
+    for (const caminho of [`/${chave}`, `/danfse/${chave}`]) {
+      const r = await this.http(caminho, base)
+      const bytes = r.bytes ?? Buffer.from(r.corpo, 'utf8')
+      tentativas.push({ url: base + caminho, status: r.status, tipo: r.corpo.slice(0, 40) })
+
+      if (r.status === 403) {
+        throw new Error('O ADN recusou a conexão (HTTP 403) ao gerar o PDF: confira o certificado digital.')
+      }
+      if (r.status >= 200 && r.status < 300) {
+        if (ehPdf(bytes)) return bytes
+        // algumas respostas trazem o PDF em base64 dentro de um JSON
+        const doJson = pdfDentroDeJson(r.corpo)
+        if (doJson) return doJson
+      }
+      // 404 ou corpo que não é PDF: tenta o próximo formato de caminho
     }
-    if (r.status === 404) throw new Error('O ADN não encontrou esta NFS-e para gerar o PDF.')
-    if (r.status < 200 || r.status >= 300) throw new Error(`ADN respondeu HTTP ${r.status} ao gerar o PDF`)
-    const bytes = r.bytes ?? Buffer.from(r.corpo, 'utf8')
-    if (!ehPdf(bytes)) {
-      // algumas respostas trazem o PDF em base64 dentro de um JSON
-      const doJson = pdfDentroDeJson(r.corpo)
-      if (doJson) return doJson
-      throw new Error('O ADN não devolveu um PDF para esta chave.')
-    }
-    return bytes
+
+    const resumo = tentativas.map((t) => `${t.url} → HTTP ${t.status}`).join(' | ')
+    throw new Error(`O ADN não devolveu o PDF desta NFS-e. Tentativas: ${resumo}`)
   }
 }
 

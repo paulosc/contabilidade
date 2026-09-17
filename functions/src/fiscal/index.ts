@@ -29,6 +29,7 @@ import {
 } from './modelo'
 import { ESPERA_SEM_DOCUMENTOS_MS, mesmaRaizCnpj, resolverCredenciais, sincronizarEmpresa } from './sincronizacao'
 import { ESPERA_NFSE_MS, resolverCredenciaisNfse, sincronizarNfseDaEmpresa } from './sincronizacaoNfse'
+import { importarDoMunicipio } from './importacaoMunicipal'
 import { avaliarTesteDeConexao, explicarTesteDeConexao, type AmbienteFiscal } from '../providers/fiscal/DistribuicaoDFeProvider'
 import { UF_IBGE } from '../providers/fiscal/sefazNacional'
 
@@ -572,9 +573,70 @@ export const pdfNotaServico = onCall(
       await auditar(id, 'xml_baixado', req.auth!.uid, { email, chaveAcesso, detalhe: 'PDF (DANFSe)' })
       return { chaveAcesso, nomeArquivo: `${chaveAcesso}.pdf`, pdfBase64: pdf.toString('base64') }
     } catch (e) {
-      throw new HttpsError('internal', (e as Error).message)
+      const erro = (e as Error).message
+      logger.error('nfse: falha ao gerar o PDF', { empresaId: id, chaveAcesso, erro })
+      throw new HttpsError('internal', erro)
     } finally {
       credenciais.provider.encerrar()
     }
   },
 )
+
+/**
+ * Importa as NFS-e antigas direto do web service do município (padrão ABRASF 2.02).
+ *
+ * É o caminho para as notas anteriores à migração do município para o Emissor Nacional, que o
+ * ADN não distribui. A consulta é oficial e por CNPJ + período — sem scraping.
+ */
+export const importarNfseMunicipal = onCall(
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 540, memory: '1GiB' },
+  async (req) => {
+    const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+    const { de, ate, incluirTomadas } = (req.data ?? {}) as { de?: string; ate?: string; incluirTomadas?: boolean }
+    if (!de || !ate) throw new HttpsError('invalid-argument', 'Informe o período (de e até)')
+
+    const inicio = new Date(`${de}T00:00:00-03:00`)
+    const fim = new Date(`${ate}T23:59:59-03:00`)
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+      throw new HttpsError('invalid-argument', 'Período inválido')
+    }
+    if (inicio > fim) throw new HttpsError('invalid-argument', 'A data inicial é posterior à final')
+
+    try {
+      const r = await importarDoMunicipio(id, FISCAL_CRYPTO_KEY.value(), {
+        de: inicio,
+        ate: fim,
+        incluirTomadas: Boolean(incluirTomadas),
+      })
+      await auditar(id, 'sincronizacao_manual', req.auth!.uid, {
+        email,
+        detalhe: `Importação municipal ${r.de} a ${r.ate} · ${r.novas} nova(s), ${r.atualizadas} já conhecida(s)`,
+      })
+      return r
+    } catch (e) {
+      const erro = (e as Error).message
+      logger.error('municipal: importação falhou', { empresaId: id, erro })
+      throw new HttpsError('internal', erro)
+    }
+  },
+)
+
+/** Guarda o município e a inscrição municipal usados na consulta ABRASF. */
+export const salvarMunicipioWebservice = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const { municipio, inscricaoMunicipal } = (req.data ?? {}) as { municipio?: string; inscricaoMunicipal?: string }
+  const apelido = (municipio ?? '').trim().toLowerCase()
+  if (apelido && !/^[a-z0-9.-]{3,80}$/.test(apelido)) throw new HttpsError('invalid-argument', 'Município inválido')
+
+  await configFiscalRef(id).set(
+    {
+      tipo: 'fiscal',
+      municipioWebservice: apelido || FieldValue.delete(),
+      inscricaoMunicipal: (inscricaoMunicipal ?? '').trim() || FieldValue.delete(),
+      atualizadoEm: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  )
+  await auditar(id, 'integracao_ativada', req.auth!.uid, { email, detalhe: `Web service municipal: ${apelido || 'removido'}` })
+  return { ok: true }
+})

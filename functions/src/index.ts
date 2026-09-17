@@ -24,5 +24,7 @@ export {
   sincronizarNfseAgora,
   xmlNotaServico,
   pdfNotaServico,
+  importarNfseMunicipal,
+  salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'
