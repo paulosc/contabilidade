@@ -101,7 +101,16 @@ export function ImportacaoMunicipalCard() {
       }
       const r = await httpsCallable<
         unknown,
-        { encontradas: number; novas: number; atualizadas: number; consultas: number; erros: number; mensagens: string[] }
+        {
+          encontradas: number
+          novas: number
+          atualizadas: number
+          consultas: number
+          erros: number
+          mensagens: string[]
+          cobertoAte: string
+          interrompida: boolean
+        }
       >(functions, 'importarNfseMunicipal')({ de: v.de, ate: v.ate, incluirTomadas })
       const d = r.data
       const detalhe = d.mensagens.length ? ` ${d.mensagens.join(' · ')}` : ''
@@ -111,6 +120,8 @@ export function ImportacaoMunicipalCard() {
           `${d.encontradas} nota(s) encontrada(s) em ${d.consultas} consulta(s) — ` +
           `${d.novas} nova(s), ${d.atualizadas} já conhecida(s).${d.erros ? ` ${d.erros} erro(s).` : ''}${detalhe}`,
       })
+      // varredura interrompida no limite: já deixa o próximo período pronto para continuar
+      if (d.interrompida && d.cobertoAte) formPeriodo.setValue('de', d.cobertoAte)
     } catch (e) {
       setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Falha na importação.' })
     } finally {

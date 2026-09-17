@@ -54,6 +54,10 @@ export interface ResultadoImportacao {
   atualizadas: number
   erros: number
   mensagens: string[]
+  /** Até onde a varredura realmente chegou — o teto de consultas pode interrompê-la antes do fim */
+  cobertoAte: string
+  /** A varredura parou por limite, e não por ter terminado o período */
+  interrompida: boolean
   duracaoMs: number
 }
 
@@ -175,7 +179,10 @@ export async function importarDoMunicipio(
   let consultas = 0
   let encontradas = 0
   let erros = 0
-  const maxConsultas = Math.max(1, opcoes.maxConsultas ?? 60)
+  const maxConsultas = Math.max(1, opcoes.maxConsultas ?? 120)
+  // até onde a varredura chegou de fato; o teto de consultas pode interrompê-la no meio
+  let cobertoAte = opcoes.de
+  let interrompida = false
 
   logger.info('municipal: importação iniciada', {
     empresaId,
@@ -187,12 +194,13 @@ export async function importarDoMunicipio(
 
   try {
     for (const faixa of mesesEntre(opcoes.de, opcoes.ate)) {
+      cobertoAte = faixa.ate
       for (const tipo of opcoes.incluirTomadas ? (['prestadas', 'tomadas'] as const) : (['prestadas'] as const)) {
         let pagina = 1
         // eslint-disable-next-line no-constant-condition
         while (true) {
           if (consultas >= maxConsultas) {
-            mensagens.push('Limite de consultas da execução atingido; repita a importação para continuar o período.')
+            interrompida = true
             return finalizar()
           }
           consultas++
@@ -233,14 +241,23 @@ export async function importarDoMunicipio(
 
   function finalizar(): ResultadoImportacao {
     const duracaoMs = Date.now() - inicio
+    const ateISO = cobertoAte.toISOString().slice(0, 10)
+    if (interrompida) {
+      mensagens.push(
+        `A varredura foi até ${cobertoAte.toLocaleDateString('pt-BR')} e parou no limite de consultas desta execução. ` +
+          'Importe de novo começando nessa data para continuar.',
+      )
+    }
     void configFiscalRef(empresaId)
       .set(
         {
           importacaoMunicipal: {
             ultimaEm: FieldValue.serverTimestamp(),
             periodoDe: opcoes.de.toISOString().slice(0, 10),
-            periodoAte: opcoes.ate.toISOString().slice(0, 10),
+            // o que interessa para retomar é até onde a varredura foi, não o que foi pedido
+            periodoAte: ateISO,
             notasImportadas: contadores.novas,
+            interrompida,
           },
           atualizadoEm: FieldValue.serverTimestamp(),
         },
@@ -269,6 +286,8 @@ export async function importarDoMunicipio(
       atualizadas: contadores.atualizadas,
       erros,
       mensagens,
+      cobertoAte: ateISO,
+      interrompida,
       duracaoMs,
     }
   }
