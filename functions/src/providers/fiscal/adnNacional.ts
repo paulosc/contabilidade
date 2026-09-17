@@ -155,7 +155,7 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     const permitidos = ['adn.nfse.gov.br', 'sefin.nfse.gov.br', 'adn.producaorestrita.nfse.gov.br', 'sefin.producaorestrita.nfse.gov.br']
     if (!permitidos.includes(url.hostname)) throw new Error(`Host fora do ambiente nacional: ${url.hostname}`)
     const r = await this.http('', urlCompleta, 'application/json, text/html, */*')
-    return { url: urlCompleta, status: r.status, corpo: r.corpo.slice(0, 6000) }
+    return { url: urlCompleta, status: r.status, corpo: r.corpo.slice(0, 400_000) }
   }
 
   async danfse(chaveAcesso: string): Promise<Buffer> {

@@ -590,35 +590,67 @@ export const pdfNotaServico = onCall(
  * URL, para o certificado não virar um proxy de saída.
  */
 export const diagnosticoNfseNacional = onCall(
-  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' },
   async (req) => {
     const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
     const credenciais = await resolverCredenciaisNfse(id, FISCAL_CRYPTO_KEY.value())
-    const alvos = [
-      'https://sefin.nfse.gov.br/SefinNacional/swagger/v1/swagger.json',
+    const fila = [
       'https://sefin.nfse.gov.br/SefinNacional/docs/index',
-      'https://adn.nfse.gov.br/danfse/swagger/v1/swagger.json',
-      'https://adn.nfse.gov.br/danfse/docs/index.html',
       'https://adn.nfse.gov.br/contribuintes/swagger/v1/swagger.json',
+      'https://adn.nfse.gov.br/contribuintes/docs/index.html',
     ]
-    const resultados = []
+    const vistos = new Set<string>()
+    const resumo: string[] = []
+
+    /** Extrai método+caminho de um Swagger/OpenAPI, para o log ficar legível. */
+    const rotasDoSwagger = (corpo: string): string[] => {
+      try {
+        const spec = JSON.parse(corpo) as { paths?: Record<string, Record<string, unknown>> }
+        return Object.entries(spec.paths ?? {}).flatMap(([caminho, ops]) =>
+          Object.keys(ops).map((m) => `${m.toUpperCase()} ${caminho}`),
+        )
+      } catch {
+        return []
+      }
+    }
+
     try {
-      for (const alvo of alvos) {
+      while (fila.length) {
+        const alvo = fila.shift()!
+        if (vistos.has(alvo)) continue
+        vistos.add(alvo)
+        let r
         try {
-          resultados.push(await credenciais.provider.sondar(alvo))
+          r = await credenciais.provider.sondar(alvo)
         } catch (e) {
-          resultados.push({ url: alvo, status: 0, corpo: `ERRO: ${(e as Error).message}` })
+          resumo.push(`${alvo} → ERRO ${(e as Error).message}`)
+          continue
+        }
+        const rotas = rotasDoSwagger(r.corpo)
+        resumo.push(`${alvo} → ${r.status}${rotas.length ? ` (${rotas.length} rotas)` : ''}`)
+        // um registro por endereço: o corpo do swagger é grande demais para caber num só
+        logger.info('nfse: diagnóstico — resposta', { empresaId: id, url: alvo, status: r.status, rotas, tamanho: r.corpo.length })
+        for (let i = 0; i < r.corpo.length; i += 60_000) {
+          logger.info('nfse: diagnóstico — corpo', { url: alvo, parte: i / 60_000 + 1, trecho: r.corpo.slice(i, i + 60_000) })
+        }
+        // a página de docs aponta para o JSON da especificação: segue o link, no mesmo host
+        if (r.status === 200 && !rotas.length) {
+          for (const m of r.corpo.matchAll(/["'\s(]([^"'\s()]+?\.json)["'\s)]/g)) {
+            try {
+              const ligado = new URL(m[1], alvo).toString()
+              if (new URL(ligado).hostname === new URL(alvo).hostname && !vistos.has(ligado)) fila.push(ligado)
+            } catch {
+              // não era URL
+            }
+          }
         }
       }
     } finally {
       credenciais.provider.encerrar()
     }
     await auditar(id, 'xml_baixado', req.auth!.uid, { email, detalhe: 'diagnóstico das APIs nacionais' })
-    logger.info('nfse: diagnóstico das APIs nacionais', {
-      empresaId: id,
-      resumo: resultados.map((r) => `${r.url} → ${r.status} (${r.corpo.length}b)`),
-    })
-    return { resultados }
+    logger.info('nfse: diagnóstico das APIs nacionais', { empresaId: id, resumo })
+    return { resumo }
   },
 )
 

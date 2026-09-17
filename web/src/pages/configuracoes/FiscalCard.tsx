@@ -131,13 +131,9 @@ export function FiscalCard() {
    * Temporário: serve para descobrir o caminho certo do DANFSe e o da emissão.
    */
   async function diagnosticar() {
-    const r = await chamar<{ resultados: Array<{ url: string; status: number; corpo: string }> }>(
-      'diagnosticoNfseNacional',
-      {},
-      'diagnostico',
-    )
+    const r = await chamar<{ resumo: string[] }>('diagnosticoNfseNacional', {}, 'diagnostico')
     if (!r) return
-    setMsg({ tipo: 'info', texto: r.resultados.map((x) => `${x.url} → ${x.status}`).join(' · ') })
+    setMsg({ tipo: 'info', texto: r.resumo.join(' · ') })
   }
 
   async function sincronizarNfse() {
