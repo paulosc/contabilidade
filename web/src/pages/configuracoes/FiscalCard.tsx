@@ -10,7 +10,7 @@ import { useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, Campo, Card, Input, Select } from '../../components/ui'
 import { confirmar } from '../../components/Dialogo'
 import { cn, formatCpfCnpj, formatData, somenteDigitos } from '../../lib/utils'
-import { diasAte, esquemaCertificadoFiscal, lerArquivoBase64, nsuLegivel, UFS, type FormCertificadoFiscal } from '../../lib/fiscal'
+import { diasAte, esquemaCertificadoFiscal, lerArquivoBase64, nsuLegivel, resumoDaBusca, UFS, type FormCertificadoFiscal } from '../../lib/fiscal'
 import { AMBIENTES_FISCAIS, SITUACOES_SYNC_FISCAL, type ConfiguracaoFiscal } from '../../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -96,7 +96,7 @@ export function FiscalCard() {
   }
 
   async function sincronizar() {
-    const r = await chamar<{ executou: boolean; motivo?: string; documentosProcessados: number; nsuInicial: string; nsuFinal: string; mensagemRetorno?: string }>(
+    const r = await chamar<{ executou: boolean; motivo?: string; documentosProcessados: number; notasNovas: number; notasAtualizadas: number; nsuInicial: string; nsuFinal: string; mensagemRetorno?: string }>(
       'sincronizarFiscalAgora',
       {},
       'sincronizar',
@@ -106,7 +106,7 @@ export function FiscalCard() {
       r.executou
         ? {
             tipo: 'sucesso',
-            texto: `${r.documentosProcessados} documento(s) processado(s). NSU ${nsuLegivel(r.nsuInicial)} → ${nsuLegivel(r.nsuFinal)}.${r.mensagemRetorno ? ` ${r.mensagemRetorno}` : ''}`,
+            texto: `${resumoDaBusca(r)} NSU ${nsuLegivel(r.nsuInicial)} → ${nsuLegivel(r.nsuFinal)}.${r.mensagemRetorno ? ` ${r.mensagemRetorno}` : ''}`,
           }
         : { tipo: 'info', texto: r.motivo ?? 'Sincronização não executada.' },
     )
@@ -127,18 +127,20 @@ export function FiscalCard() {
   }
 
   async function sincronizarNfse() {
-    const r = await chamar<{ executou: boolean; motivo?: string; documentosProcessados: number; nsuInicial: string; nsuFinal: string; mensagemRetorno?: string }>(
-      'sincronizarNfseAgora',
-      {},
-      'nfse-sincronizar',
-    )
+    const r = await chamar<{
+      executou: boolean
+      motivo?: string
+      documentosProcessados: number
+      notasNovas: number
+      notasAtualizadas: number
+      nsuInicial: string
+      nsuFinal: string
+      mensagemRetorno?: string
+    }>('sincronizarNfseAgora', {}, 'nfse-sincronizar')
     if (!r) return
     setMsg(
       r.executou
-        ? {
-            tipo: 'sucesso',
-            texto: `${r.documentosProcessados} NFS-e processada(s). NSU ${nsuLegivel(r.nsuInicial)} → ${nsuLegivel(r.nsuFinal)}.${r.mensagemRetorno ? ` ${r.mensagemRetorno}` : ''}`,
-          }
+        ? { tipo: 'sucesso', texto: `${resumoDaBusca(r)} NSU ${nsuLegivel(r.nsuInicial)} → ${nsuLegivel(r.nsuFinal)}.${r.mensagemRetorno ? ` ${r.mensagemRetorno}` : ''}` }
         : { tipo: 'info', texto: r.motivo ?? 'Busca de NFS-e não executada.' },
     )
   }

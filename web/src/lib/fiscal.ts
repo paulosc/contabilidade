@@ -64,3 +64,19 @@ export const nsuLegivel = (nsu?: string): string => {
 
 /** Quantos dias faltam para o certificado vencer (negativo = já venceu). */
 export const diasAte = (data: Date): number => Math.ceil((data.getTime() - Date.now()) / 86_400_000)
+
+/**
+ * Resumo legível de uma sincronização.
+ *
+ * "documentos processados" conta cada documento que passou pelo gravador, não notas distintas —
+ * a mesma nota reaparece quando a SEFAZ/ADN redistribui, e o registro é sobrescrito porque o id
+ * é a chave de acesso. Mostrar novas e atualizadas separadas evita a leitura errada de que
+ * chegaram N notas quando foram N gravações.
+ */
+export function resumoDaBusca(r: { documentosProcessados: number; notasNovas?: number; notasAtualizadas?: number }): string {
+  if (!r.documentosProcessados) return 'Nenhum documento novo.'
+  const partes: string[] = []
+  if (r.notasNovas) partes.push(`${r.notasNovas} nova(s)`)
+  if (r.notasAtualizadas) partes.push(`${r.notasAtualizadas} já conhecida(s)`)
+  return `${r.documentosProcessados} documento(s) processado(s)${partes.length ? ` — ${partes.join(', ')}` : ''}.`
+}

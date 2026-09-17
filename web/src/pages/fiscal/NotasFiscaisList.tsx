@@ -9,7 +9,7 @@ import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner } from '../../components/ui'
 import { formatBRL, formatCpfCnpj, formatData, somenteDigitos } from '../../lib/utils'
-import { esquemaFiltroNotas, filtroVazio, formatarChave, nsuLegivel, type FormFiltroNotas } from '../../lib/fiscal'
+import { esquemaFiltroNotas, filtroVazio, formatarChave, nsuLegivel, resumoDaBusca, type FormFiltroNotas } from '../../lib/fiscal'
 import {
   SITUACOES_SYNC_FISCAL,
   STATUS_NOTA_FISCAL,
@@ -87,13 +87,13 @@ export function NotasFiscaisList() {
     setOcupado('sincronizar')
     setMsg(null)
     try {
-      const r = await httpsCallable<unknown, { executou: boolean; motivo?: string; documentosProcessados: number; mensagemRetorno?: string }>(
+      const r = await httpsCallable<unknown, { executou: boolean; motivo?: string; documentosProcessados: number; notasNovas: number; notasAtualizadas: number; mensagemRetorno?: string }>(
         functions,
         'sincronizarFiscalAgora',
       )({})
       setMsg(
         r.data.executou
-          ? { tipo: 'sucesso', texto: `${r.data.documentosProcessados} documento(s) processado(s).${r.data.mensagemRetorno ? ` ${r.data.mensagemRetorno}` : ''}` }
+          ? { tipo: 'sucesso', texto: `${resumoDaBusca(r.data)}${r.data.mensagemRetorno ? ` ${r.data.mensagemRetorno}` : ''}` }
           : { tipo: 'info', texto: r.data.motivo ?? 'Sincronização não executada.' },
       )
     } catch (e) {
