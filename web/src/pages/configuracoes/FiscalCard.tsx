@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { FileText, PlugZap, Power, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
+import { Check, FileText, PlugZap, Power, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { functions } from '../../lib/firebase'
 import { useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, Campo, Card, Input, Select } from '../../components/ui'
 import { confirmar } from '../../components/Dialogo'
-import { formatCpfCnpj, formatData, somenteDigitos } from '../../lib/utils'
+import { cn, formatCpfCnpj, formatData, somenteDigitos } from '../../lib/utils'
 import { diasAte, esquemaCertificadoFiscal, lerArquivoBase64, nsuLegivel, UFS, type FormCertificadoFiscal } from '../../lib/fiscal'
 import { AMBIENTES_FISCAIS, SITUACOES_SYNC_FISCAL, type ConfiguracaoFiscal } from '../../types'
 
@@ -253,12 +253,31 @@ export function FiscalCard() {
           </Campo>
           <Campo label="Certificado digital A1 (.pfx ou .p12)" className="sm:col-span-3" obrigatorio
             dica="O arquivo vai cifrado para o backend e nunca fica no navegador">
-            <input
-              type="file"
-              accept=".pfx,.p12"
-              onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm"
-            />
+            <label
+              className={cn(
+                'flex cursor-pointer items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 transition-colors',
+                arquivo ? 'border-emerald-400 bg-emerald-50' : 'border-slate-300 bg-white hover:border-indigo-400 hover:bg-indigo-50/40',
+              )}
+            >
+              <input
+                type="file"
+                accept=".pfx,.p12"
+                onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+                className="sr-only"
+              />
+              <span
+                className={cn(
+                  'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-sm font-medium',
+                  arquivo ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white',
+                )}
+              >
+                {arquivo ? <Check className="h-3.5 w-3.5" /> : <Upload className="h-3.5 w-3.5" />}
+                {arquivo ? 'Trocar arquivo' : 'Escolher arquivo'}
+              </span>
+              <span className={cn('min-w-0 flex-1 truncate text-sm', arquivo ? 'text-emerald-900' : 'text-slate-500')}>
+                {arquivo ? `${arquivo.name} · ${Math.max(1, Math.round(arquivo.size / 1024))} KB` : 'Nenhum arquivo escolhido'}
+              </span>
+            </label>
           </Campo>
           <Campo label="Senha do certificado" className="sm:col-span-3" erro={form.formState.errors.senha?.message} obrigatorio>
             <Input type="password" autoComplete="new-password" {...form.register('senha')} />
