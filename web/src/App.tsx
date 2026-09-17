@@ -10,6 +10,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Configuracoes } from './pages/Configuracoes'
 import { NotasFiscaisList } from './pages/fiscal/NotasFiscaisList'
 import { NotasServicoList } from './pages/fiscal/NotasServicoList'
+import { EmitirNotaServico } from './pages/fiscal/EmitirNotaServico'
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
               <Route path="empresas/nova" element={<Onboarding adicional />} />
               <Route path="notas-fiscais" element={<NotasFiscaisList />} />
               <Route path="notas-servico" element={<NotasServicoList />} />
+              <Route path="notas-servico/emitir" element={<EmitirNotaServico />} />
               <Route path="configuracoes" element={<Configuracoes />} />
             </Route>
           </Route>

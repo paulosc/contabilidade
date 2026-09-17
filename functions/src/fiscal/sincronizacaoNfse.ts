@@ -180,7 +180,7 @@ function limpar<T extends object>(objeto: T): T {
   return podar(objeto) as T
 }
 
-async function guardarXml(empresaId: string, chave: string, sufixo: string, xml: string): Promise<string> {
+export async function guardarXml(empresaId: string, chave: string, sufixo: string, xml: string): Promise<string> {
   const caminho = caminhoXmlServico(empresaId, chave, sufixo)
   await storage
     .bucket()
@@ -193,7 +193,7 @@ async function guardarXml(empresaId: string, chave: string, sufixo: string, xml:
   return caminho
 }
 
-interface Contadores {
+export interface Contadores {
   novas: number
   atualizadas: number
   eventos: number
@@ -201,7 +201,7 @@ interface Contadores {
   processados: number
 }
 
-async function gravarDocumento(
+export async function gravarDocumento(
   empresaId: string,
   documentoEmpresa: string,
   ambiente: AmbienteFiscal,

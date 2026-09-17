@@ -10,6 +10,8 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { gerarDanfse } from './danfse'
+import { ErroDps, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
+import { ErroEmissao, cancelarNfse as cancelarNfseNoSefin, emitirNfse as emitirNfseNoSefin, modeloDeNota, numeracaoAtual } from './emissao'
 import { logger } from 'firebase-functions'
 import { db, storage } from '../lib/admin'
 import { FISCAL_CRYPTO_KEY, FISCAL_MAX_EMPRESAS, REGIAO, SEFAZ_AMBIENTE } from '../lib/config'
@@ -680,6 +682,90 @@ export const diagnosticoNfseNacional = onCall(
     await auditar(id, 'xml_baixado', req.auth!.uid, { email, detalhe: 'diagnóstico das APIs nacionais' })
     logger.info('nfse: diagnóstico das APIs nacionais', { empresaId: id, resumo })
     return { resumo }
+  },
+)
+
+// ---------- emissão, substituição e cancelamento (SEFIN Nacional) ----------
+
+const ambienteDoPedido = (dados: unknown): AmbienteNfse => {
+  const a = (dados as { ambiente?: unknown })?.ambiente
+  return a === 'producao' ? 'producao' : 'homologacao'
+}
+
+/** Produção só com a palavra de confirmação: nota emitida tem efeito fiscal e não volta. */
+function exigirConfirmacaoDeProducao(dados: unknown, ambiente: AmbienteNfse) {
+  if (ambiente === 'producao' && (dados as { confirmacao?: unknown })?.confirmacao !== 'PRODUCAO') {
+    throw new HttpsError('failed-precondition', 'Para emitir em produção, confirme digitando PRODUCAO.')
+  }
+}
+
+const traduzirErroEmissao = (e: unknown): never => {
+  if (e instanceof ErroEmissao || e instanceof ErroDps) throw new HttpsError('failed-precondition', e.message, { mensagens: (e as ErroEmissao).mensagens ?? [] })
+  throw new HttpsError('internal', (e as Error).message)
+}
+
+/** O DPS de uma nota emitida pela empresa, para servir de modelo a uma nova ("gerar igual"). */
+export const modeloEmissaoNfse = onCall({ region: REGIAO, timeoutSeconds: 60 }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  const { chaveAcesso } = (req.data ?? {}) as { chaveAcesso?: string }
+  if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave da nota-modelo')
+  try {
+    const [modelo, numeracao] = await Promise.all([modeloDeNota(id, chaveAcesso), numeracaoAtual(id)])
+    return { ...modelo, numeracao }
+  } catch (e) {
+    return traduzirErroEmissao(e)
+  }
+})
+
+/** Numeração atual da emissão (série e próximo número), para a tela. */
+export const numeracaoEmissaoNfse = onCall({ region: REGIAO }, async (req) => {
+  const { id } = await exigirMembro(req.auth?.uid, req.data)
+  return numeracaoAtual(id)
+})
+
+/**
+ * Emite (ou substitui, se `dados.substituicao` vier) uma NFS-e no SEFIN Nacional.
+ * O DPS chega revisado da tela; numeração, data/hora e assinatura são do servidor.
+ */
+export const emitirNfse = onCall(
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' },
+  async (req) => {
+    const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+    const ambiente = ambienteDoPedido(req.data)
+    exigirConfirmacaoDeProducao(req.data, ambiente)
+    const dados = (req.data as { dados?: DadosDps })?.dados
+    if (!dados || typeof dados !== 'object') throw new HttpsError('invalid-argument', 'Informe os dados do DPS')
+    try {
+      const r = await emitirNfseNoSefin(id, FISCAL_CRYPTO_KEY.value(), dados, ambiente, req.auth!.uid)
+      await auditar(id, 'nfse_emitida', req.auth!.uid, {
+        email,
+        chaveAcesso: r.chaveAcesso,
+        detalhe: `${ambiente === 'producao' ? 'PRODUÇÃO' : 'produção restrita'} · DPS ${r.serie}/${r.numeroDps}${dados.substituicao ? ` · substitui ${dados.substituicao.chaveSubstituida}` : ''}`,
+      })
+      return r
+    } catch (e) {
+      return traduzirErroEmissao(e)
+    }
+  },
+)
+
+/** Registra o cancelamento (evento e101101) de uma NFS-e emitida pela empresa. */
+export const cancelarNfse = onCall(
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
+  async (req) => {
+    const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+    const { chaveAcesso, motivo, descricao } = (req.data ?? {}) as { chaveAcesso?: string; motivo?: string; descricao?: string }
+    if (!chaveAcesso || !motivo || !descricao) throw new HttpsError('invalid-argument', 'Informe a chave, o motivo e a justificativa')
+    if (!['1', '2', '9'].includes(motivo)) throw new HttpsError('invalid-argument', 'Motivo inválido')
+    const nota = (await notasServicoRef(id).doc(chaveAcesso).get()).data() as { ambiente?: string } | undefined
+    if (nota?.ambiente !== 'homologacao') exigirConfirmacaoDeProducao(req.data, 'producao')
+    try {
+      const r = await cancelarNfseNoSefin(id, FISCAL_CRYPTO_KEY.value(), chaveAcesso, motivo as MotivoCancelamento, descricao, req.auth!.uid)
+      await auditar(id, 'nfse_cancelada', req.auth!.uid, { email, chaveAcesso: r.chaveAcesso, detalhe: `motivo ${motivo}: ${descricao}` })
+      return r
+    } catch (e) {
+      return traduzirErroEmissao(e)
+    }
   },
 )
 

@@ -98,3 +98,20 @@ export function apelidoMunicipio(nome?: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '')
 }
+
+/** Justificativas de cancelamento da NFS-e nacional (TSCodJustCanc). */
+export const MOTIVOS_CANCELAMENTO: Record<string, string> = {
+  '1': 'Erro na emissão',
+  '2': 'Serviço não prestado',
+  '9': 'Outros',
+}
+
+/** Justificativas de substituição da NFS-e nacional (TSCodJustSubst). */
+export const MOTIVOS_SUBSTITUICAO: Record<string, string> = {
+  '01': 'Desenquadramento do Simples Nacional',
+  '02': 'Enquadramento no Simples Nacional',
+  '03': 'Inclusão retroativa de imunidade/isenção',
+  '04': 'Exclusão retroativa de imunidade/isenção',
+  '05': 'Rejeição pelo tomador/intermediário responsável pelo recolhimento',
+  '99': 'Outros',
+}

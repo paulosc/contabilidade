@@ -159,6 +159,8 @@ export interface ConfiguracaoFiscal {
     notasImportadas?: number
   }
   sincronizacaoNfse?: EstadoSincronizacaoNfse
+  /** Numeração própria das NFS-e emitidas por aqui (série de aplicativo próprio, 1–49999) */
+  emissao?: { serie: string; proximoNumero: number }
   atualizadoEm: Timestamp
 }
 
@@ -254,6 +256,8 @@ export type OperacaoAuditada =
   | 'conexao_testada'
   | 'sincronizacao_manual'
   | 'xml_baixado'
+  | 'nfse_emitida'
+  | 'nfse_cancelada'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
@@ -318,6 +322,12 @@ export interface NotaServico {
   hashXml?: string
   eventos?: EventoNotaServico[]
   ambiente: AmbienteFiscal
+  /** Preenchidos quando a nota foi emitida por este sistema */
+  emitidaPor?: string
+  emitidaEm?: Timestamp
+  /** Chave da NFS-e que substituiu esta */
+  substituidaPor?: string
+  cancelamento?: { motivo: string; descricao: string; em: Timestamp; por: string; processadoEm?: string | null }
   importadoEm: Timestamp
   criadoEm: Timestamp
   atualizadoEm: Timestamp

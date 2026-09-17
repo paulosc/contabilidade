@@ -4,12 +4,14 @@ import { limit, orderBy } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { ChevronDown, ChevronUp, Download, Eraser, FileDown, Receipt, RefreshCw, Settings } from 'lucide-react'
+import { Ban, ChevronDown, ChevronUp, Copy, Download, Eraser, FileDown, Receipt, RefreshCw, Replace, Settings } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
-import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner } from '../../components/ui'
+import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner, Textarea } from '../../components/ui'
 import { formatBRL, formatCpfCnpj, formatData, somenteDigitos } from '../../lib/utils'
-import { esquemaFiltroNotas, filtroVazio, formatarChave, nsuLegivel, resumoDaBusca, type FormFiltroNotas } from '../../lib/fiscal'
+import { MOTIVOS_CANCELAMENTO, esquemaFiltroNotas, filtroVazio, formatarChave, nsuLegivel, resumoDaBusca, type FormFiltroNotas } from '../../lib/fiscal'
+import { useAuth } from '../../auth/AuthProvider'
+import { confirmar } from '../../components/Dialogo'
 import {
   PAPEIS_NOTA_SERVICO,
   SITUACOES_SYNC_FISCAL,
@@ -32,12 +34,23 @@ function DetalheNota({
   ocupado,
   aoBaixarPdf,
   aoBaixarXml,
+  podeOperar,
+  aoCancelar,
 }: {
   nota: ComId<NotaServico>
   ocupado: string | null
   aoBaixarPdf: (n: ComId<NotaServico>) => void
   aoBaixarXml: (n: ComId<NotaServico>, caminho?: string) => void
+  /** Emitir/substituir/cancelar: só admin, só nas notas nacionais em que a empresa é a prestadora */
+  podeOperar: boolean
+  aoCancelar: (n: ComId<NotaServico>, motivo: string, descricao: string, confirmacao: string) => Promise<boolean>
 }) {
+  const [cancelando, setCancelando] = useState(false)
+  const [motivo, setMotivo] = useState('1')
+  const [descricao, setDescricao] = useState('')
+  const [confirmacao, setConfirmacao] = useState('')
+  const emProducao = nota.ambiente !== 'homologacao'
+  const operavel = podeOperar && nota.origem !== 'municipal' && nota.papel === 'prestador'
   return (
     <div className="border-l-2 border-indigo-400 bg-slate-50/70 px-4 py-4">
       {nota.origem === 'municipal' ? (
@@ -140,12 +153,80 @@ function DetalheNota({
             <Download className="h-3.5 w-3.5" /> Baixar XML
           </Botao>
         )}
+        {operavel && (
+          <>
+            <Link to={`/notas-servico/emitir?modelo=${nota.chaveAcesso}`}>
+              <Botao tamanho="sm" variante="secundario">
+                <Copy className="h-3.5 w-3.5" /> Gerar nota igual
+              </Botao>
+            </Link>
+            {nota.status !== 'cancelada' && (
+              <>
+                <Link to={`/notas-servico/emitir?modelo=${nota.chaveAcesso}&substituir=1`}>
+                  <Botao tamanho="sm" variante="secundario">
+                    <Replace className="h-3.5 w-3.5" /> Substituir
+                  </Botao>
+                </Link>
+                <Botao tamanho="sm" variante={cancelando ? 'secundario' : 'perigo'} onClick={() => setCancelando((v) => !v)}>
+                  <Ban className="h-3.5 w-3.5" /> {cancelando ? 'Desistir do cancelamento' : 'Cancelar nota'}
+                </Botao>
+              </>
+            )}
+          </>
+        )}
       </div>
+
+      {nota.cancelamento && (
+        <p className="mt-3 text-xs text-slate-500">
+          Cancelada por este sistema · motivo {nota.cancelamento.motivo} ({MOTIVOS_CANCELAMENTO[nota.cancelamento.motivo] ?? '—'}): {nota.cancelamento.descricao}
+        </p>
+      )}
+      {nota.substituidaPor && <p className="mt-3 text-xs text-slate-500">Substituída pela NFS-e {formatarChave(nota.substituidaPor)}</p>}
+
+      {cancelando && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50/60 p-3">
+          <p className="mb-2 text-sm font-medium text-red-800">
+            Cancelar esta NFS-e{emProducao ? ' em PRODUÇÃO' : ' (produção restrita)'}. O cancelamento é irreversível e, fora do prazo do município, depende de análise fiscal.
+          </p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+            <Campo label="Motivo" className="sm:col-span-2" obrigatorio>
+              <Select value={motivo} onChange={(e) => setMotivo(e.target.value)}>
+                {Object.entries(MOTIVOS_CANCELAMENTO).map(([c, t]) => (
+                  <option key={c} value={c}>
+                    {c} — {t}
+                  </option>
+                ))}
+              </Select>
+            </Campo>
+            <Campo label="Justificativa" className="sm:col-span-4" dica={`${descricao.trim().length}/255 — mínimo 15 caracteres`} obrigatorio>
+              <Textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={255} />
+            </Campo>
+            {emProducao && (
+              <Campo label="Confirmação" className="sm:col-span-2" dica="Digite PRODUCAO" obrigatorio>
+                <Input autoComplete="off" value={confirmacao} onChange={(e) => setConfirmacao(e.target.value)} />
+              </Campo>
+            )}
+            <div className="flex items-end sm:col-span-4">
+              <Botao
+                tamanho="sm"
+                variante="perigo"
+                carregando={ocupado === `cancelar-${nota.id}`}
+                disabled={descricao.trim().length < 15 || (emProducao && confirmacao !== 'PRODUCAO')}
+                onClick={() => void aoCancelar(nota, motivo, descricao.trim(), confirmacao).then((ok) => ok && setCancelando(false))}
+              >
+                <Ban className="h-3.5 w-3.5" /> Confirmar cancelamento
+              </Botao>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 export function NotasServicoList() {
+  const { membro } = useAuth()
+  const ehAdmin = membro?.papel === 'admin'
   const { dados, carregando, erro } = useColecao<NotaServico>('notasServico', [orderBy('dataEmissao', 'desc'), limit(TETO_LISTAGEM)])
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
   const [expandida, setExpandida] = useState<string | null>(null)
@@ -235,6 +316,27 @@ export function NotasServicoList() {
       URL.revokeObjectURL(url)
     } catch (e) {
       setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível gerar o PDF.' })
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  async function cancelar(nota: ComId<NotaServico>, motivo: string, descricao: string, confirmacao: string): Promise<boolean> {
+    const producao = nota.ambiente !== 'homologacao'
+    const ok = await confirmar(
+      `Cancelar a NFS-e ${nota.numero ?? ''}${producao ? ' em PRODUÇÃO' : ''}? Isso não pode ser desfeito.`,
+      { titulo: 'Cancelamento de NFS-e', textoConfirmar: 'Cancelar a nota', perigo: true },
+    )
+    if (!ok) return false
+    setOcupado(`cancelar-${nota.id}`)
+    setMsg(null)
+    try {
+      await httpsCallable(functions, 'cancelarNfse')({ chaveAcesso: nota.chaveAcesso, motivo, descricao, confirmacao })
+      setMsg({ tipo: 'sucesso', texto: `NFS-e ${nota.numero ?? ''} cancelada no Sistema Nacional.` })
+      return true
+    } catch (e) {
+      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível cancelar.' })
+      return false
     } finally {
       setOcupado(null)
     }
@@ -464,6 +566,8 @@ export function NotasServicoList() {
                             ocupado={ocupado}
                             aoBaixarPdf={(x) => void baixarPdf(x)}
                             aoBaixarXml={(x, caminho) => void baixarXml(x, caminho)}
+                            podeOperar={ehAdmin}
+                            aoCancelar={cancelar}
                           />
                         </td>
                       </tr>

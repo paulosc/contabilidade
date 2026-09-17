@@ -26,6 +26,10 @@ export {
   pdfNotaServico,
   importarNfseMunicipal,
   diagnosticoNfseNacional,
+  modeloEmissaoNfse,
+  numeracaoEmissaoNfse,
+  emitirNfse,
+  cancelarNfse,
   salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'
