@@ -113,3 +113,39 @@ export function explicarRetorno(cStat: string, xMotivo: string): string {
       return xMotivo || `Retorno ${cStat} da SEFAZ.`
   }
 }
+
+/**
+ * O teste de conexão usa a consulta pontual `consNSU`. Nela, três retornos provam que deu certo:
+ * o certificado foi aceito, o TLS mútuo fechou, o XML passou no schema e a SEFAZ processou.
+ *
+ *  137 nenhum documento localizado
+ *  138 documento(s) localizado(s)
+ *  589 NSU informado maior que o maior NSU do Ambiente Nacional — é o retorno normal para um
+ *      CNPJ que ainda não tem documento nenhum (maxNSU = 0), que é o caso em homologação
+ *
+ * O 656 também prova que a comunicação funciona, mas o CNPJ está de castigo por 1 hora, então
+ * vale como aviso. Qualquer outro código é problema de verdade (certificado, CNPJ, ambiente).
+ */
+export function avaliarTesteDeConexao(cStat: string): 'ok' | 'atencao' | 'erro' {
+  if (cStat === RETORNO.NENHUM_DOCUMENTO || cStat === RETORNO.DOCUMENTO_LOCALIZADO || cStat === RETORNO.NSU_SUPERIOR_AO_MAXIMO) {
+    return 'ok'
+  }
+  if (cStat === RETORNO.CONSUMO_INDEVIDO) return 'atencao'
+  return 'erro'
+}
+
+/** Mensagem do teste de conexão — diferente da do fluxo de sincronização. */
+export function explicarTesteDeConexao(cStat: string, xMotivo: string, ambiente: AmbienteFiscal): string {
+  const onde = ambiente === 'producao' ? 'produção' : 'homologação'
+  switch (cStat) {
+    case RETORNO.DOCUMENTO_LOCALIZADO:
+      return `Conexão com a SEFAZ (${onde}) funcionando: o certificado foi aceito e já há documentos disponíveis para este CNPJ.`
+    case RETORNO.NENHUM_DOCUMENTO:
+    case RETORNO.NSU_SUPERIOR_AO_MAXIMO:
+      return `Conexão com a SEFAZ (${onde}) funcionando: o certificado foi aceito. Ainda não há documentos disponíveis para este CNPJ${ambiente === 'homologacao' ? ' — o que é o normal em homologação' : ''}.`
+    case RETORNO.CONSUMO_INDEVIDO:
+      return `A SEFAZ (${onde}) respondeu, então a comunicação funciona, mas o CNPJ está bloqueado por 1 hora por consumo indevido. Tente de novo depois desse prazo.`
+    default:
+      return `SEFAZ (${onde}) recusou com o código ${cStat}: ${explicarRetorno(cStat, xMotivo)}`
+  }
+}

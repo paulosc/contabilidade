@@ -88,8 +88,10 @@ export function FiscalCard() {
   }
 
   async function testar() {
-    const r = await chamar<{ ok: boolean; mensagem: string }>('testarConexaoFiscal', {}, 'testar')
-    if (r) setMsg({ tipo: r.ok ? 'sucesso' : 'erro', texto: r.mensagem })
+    const r = await chamar<{ ok: boolean; situacao?: 'ok' | 'atencao' | 'erro'; mensagem: string }>('testarConexaoFiscal', {}, 'testar')
+    if (!r) return
+    // 'atencao' é conexão boa com ressalva (ex.: CNPJ bloqueado por 1 h): azul, não vermelho
+    setMsg({ tipo: r.situacao === 'atencao' ? 'info' : r.ok ? 'sucesso' : 'erro', texto: r.mensagem })
   }
 
   async function sincronizar() {

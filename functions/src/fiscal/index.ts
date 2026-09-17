@@ -25,7 +25,7 @@ import {
   type PrivadoFiscal,
 } from './modelo'
 import { ESPERA_SEM_DOCUMENTOS_MS, mesmaRaizCnpj, resolverCredenciais, sincronizarEmpresa } from './sincronizacao'
-import { explicarRetorno, type AmbienteFiscal } from '../providers/fiscal/DistribuicaoDFeProvider'
+import { avaliarTesteDeConexao, explicarTesteDeConexao, type AmbienteFiscal } from '../providers/fiscal/DistribuicaoDFeProvider'
 import { UF_IBGE } from '../providers/fiscal/sefazNacional'
 
 export const SEGREDOS_FISCAIS = [FISCAL_CRYPTO_KEY]
@@ -252,20 +252,21 @@ export const testarConexaoFiscal = onCall(
     try {
       credenciais = await resolverCredenciais(id, FISCAL_CRYPTO_KEY.value())
     } catch (e) {
-      return { ok: false, mensagem: (e as Error).message }
+      return { ok: false, situacao: 'erro' as const, mensagem: (e as Error).message }
     }
     try {
       const r = await credenciais.provider.consultarNsu('1')
       await auditar(id, 'conexao_testada', req.auth!.uid, { email, detalhe: `cStat ${r.cStat}` })
-      const ambiente = credenciais.ambiente === 'producao' ? 'produção' : 'homologação'
+      const situacao = avaliarTesteDeConexao(r.cStat)
       return {
-        ok: r.cStat === '137' || r.cStat === '138',
+        ok: situacao !== 'erro',
+        situacao,
         cStat: r.cStat,
-        mensagem: `SEFAZ (${ambiente}) respondeu ${r.cStat}: ${explicarRetorno(r.cStat, r.xMotivo)}`,
+        mensagem: explicarTesteDeConexao(r.cStat, r.xMotivo, credenciais.ambiente),
         maxNsu: r.maxNSU,
       }
     } catch (e) {
-      return { ok: false, mensagem: (e as Error).message }
+      return { ok: false, situacao: 'erro' as const, mensagem: (e as Error).message }
     } finally {
       credenciais.provider.encerrar()
     }

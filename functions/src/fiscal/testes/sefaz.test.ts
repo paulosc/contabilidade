@@ -6,7 +6,7 @@ import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import { gzipSync } from 'node:zlib'
 import { descompactarDocZip, extrairFalhaSoap, formatarNsu, interpretarRetorno, UF_IBGE } from '../../providers/fiscal/sefazNacional'
-import { RETORNO, explicarRetorno, tpAmbDe } from '../../providers/fiscal/DistribuicaoDFeProvider'
+import { RETORNO, avaliarTesteDeConexao, explicarRetorno, explicarTesteDeConexao, tpAmbDe } from '../../providers/fiscal/DistribuicaoDFeProvider'
 import { CHAVE_NFE, falhaSoap, procEventoCancelamento, procNFe, respostaSefaz, resumoNFe } from './apoio'
 
 describe('NSU', () => {
@@ -157,5 +157,35 @@ describe('documentos do lote chegam íntegros', () => {
       }),
     )
     assert.ok(r.documentos[0].xml.includes(CHAVE_NFE))
+  })
+})
+
+describe('teste de conexão', () => {
+  it('trata 137, 138 e 589 como conexão funcionando', () => {
+    // 589 é o retorno normal de um CNPJ sem nenhum documento (maxNSU = 0), o caso de homologação
+    for (const cStat of [RETORNO.NENHUM_DOCUMENTO, RETORNO.DOCUMENTO_LOCALIZADO, RETORNO.NSU_SUPERIOR_AO_MAXIMO]) {
+      assert.equal(avaliarTesteDeConexao(cStat), 'ok')
+    }
+  })
+
+  it('trata 656 como aviso: a comunicação funciona, o CNPJ é que está bloqueado', () => {
+    assert.equal(avaliarTesteDeConexao(RETORNO.CONSUMO_INDEVIDO), 'atencao')
+  })
+
+  it('trata problema de certificado ou de CNPJ como erro', () => {
+    for (const cStat of [RETORNO.CNPJ_DIFERE_CERTIFICADO, RETORNO.CERTIFICADO_VENCIDO, RETORNO.CERTIFICADO_SEM_CNPJ, RETORNO.AMBIENTE_DIVERGENTE, '999']) {
+      assert.equal(avaliarTesteDeConexao(cStat), 'erro')
+    }
+  })
+
+  it('não chama de falha o que foi sucesso', () => {
+    const msg = explicarTesteDeConexao(RETORNO.NSU_SUPERIOR_AO_MAXIMO, '', 'homologacao')
+    assert.match(msg, /funcionando/)
+    assert.match(msg, /homologação/)
+    assert.equal(/recusou|falha|erro/i.test(msg), false)
+  })
+
+  it('diz claramente quando a SEFAZ recusou', () => {
+    assert.match(explicarTesteDeConexao(RETORNO.CNPJ_DIFERE_CERTIFICADO, '', 'producao'), /recusou com o código 593/)
   })
 })
