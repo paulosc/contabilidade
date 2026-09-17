@@ -69,6 +69,8 @@ service cloud.firestore {
       // ---------- Documentos fiscais (NF-e) ----------
       // Baixados da SEFAZ pelas Cloud Functions. A equipe consulta; ninguém escreve pelo cliente.
       match /notasFiscais/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
+      // NFS-e: mesmas garantias da NF-e, baixadas do ADN pelo backend
+      match /notasServico/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       match /sincronizacoesFiscais/{doc=**} { allow read: if ehMembro(empresaId); allow write: if false; }
       match /auditoriaFiscal/{doc=**}       { allow read: if ehAdmin(empresaId);  allow write: if false; }
     }

@@ -28,6 +28,7 @@ const ADMIN_A = 'uid-admin-a'
 const ASSISTENTE_A = 'uid-assistente-a'
 const ADMIN_B = 'uid-admin-b'
 const CHAVE = '31260912345678000199550010000012341000012347'
+const CHAVE_NFSE = '31178012260748857000116000000000000926090381879606'
 
 let ambiente: RulesTestEnvironment
 
@@ -110,6 +111,27 @@ describe('notas fiscais', () => {
 
   it('visitante sem login não lê nota nenhuma', async () => {
     await assertFails(getDoc(doc(semLogin(), 'empresas', EMPRESA_A, 'notasFiscais', CHAVE)))
+  })
+})
+
+describe('notas de serviço (NFS-e)', () => {
+  it('membro da empresa lê as NFS-e dela', async () => {
+    await assertSucceeds(getDoc(doc(comoAdminA(), 'empresas', EMPRESA_A, 'notasServico', CHAVE_NFSE)))
+    await assertSucceeds(getDocs(collection(comoAssistenteA(), 'empresas', EMPRESA_A, 'notasServico')))
+  })
+
+  it('EMPRESA A NÃO LÊ AS NFS-e DA EMPRESA B', async () => {
+    await assertFails(getDoc(doc(comoAdminA(), 'empresas', EMPRESA_B, 'notasServico', CHAVE_NFSE)))
+    await assertFails(getDocs(collection(comoAdminA(), 'empresas', EMPRESA_B, 'notasServico')))
+  })
+
+  it('NFS-e é só leitura: quem grava é o backend', async () => {
+    await assertFails(setDoc(doc(comoAdminA(), 'empresas', EMPRESA_A, 'notasServico', CHAVE_NFSE), { valorServico: 0 }))
+    await assertFails(deleteDoc(doc(comoAdminA(), 'empresas', EMPRESA_A, 'notasServico', CHAVE_NFSE)))
+  })
+
+  it('visitante sem login não lê NFS-e', async () => {
+    await assertFails(getDoc(doc(semLogin(), 'empresas', EMPRESA_A, 'notasServico', CHAVE_NFSE)))
   })
 })
 

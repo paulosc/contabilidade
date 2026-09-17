@@ -16,6 +16,7 @@ Projeto Firebase: `contabilidade-a9d35` · Repositório: https://github.com/paul
 | Arquivos | Cloud Storage (XML das notas)                                     |
 | Backend  | Cloud Functions gen2, Node 22, TypeScript (`functions/`)          |
 | NF-e     | NFeDistribuicaoDFe / SEFAZ (adapter em `functions/src/providers/fiscal`) |
+| NFS-e    | ADN nacional, API de Distribuição dos Contribuintes (mesmo diretório) |
 
 Documentação da integração: [`docs/FISCAL_NFE.md`](docs/FISCAL_NFE.md).
 
@@ -35,8 +36,8 @@ cd functions
 cp .env.example .env
 npm install
 npm run build
-npm test                     # 80 testes (node:test), sem emulador
-npm run test:regras          # 17 testes de Security Rules no emulador (precisa de Java)
+npm test                     # 112 testes (node:test), sem emulador
+npm run test:regras          # 21 testes de Security Rules no emulador (precisa de Java)
 ```
 
 ## Deploy
@@ -81,6 +82,7 @@ firebase deploy --only functions
 
 ## Como funciona, em uma linha
 
-A empresa cadastra o certificado digital A1; de hora em hora uma Cloud Function consulta a
-SEFAZ com esse certificado, respeitando as regras de NSU e a janela obrigatória de 1 hora, e
-grava as notas no Firestore (metadados) e no Storage (XML). A tela acompanha por `onSnapshot`.
+A empresa cadastra o certificado digital A1; de hora em hora duas Cloud Functions consultam a
+SEFAZ (NF-e de mercadoria) e o ADN (NFS-e de serviço) com esse mesmo certificado, respeitando as
+regras de NSU e a janela obrigatória de 1 hora, e gravam as notas no Firestore (metadados) e no
+Storage (XML). A tela acompanha por `onSnapshot`.

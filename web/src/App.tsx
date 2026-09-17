@@ -9,6 +9,7 @@ import { Onboarding } from './pages/Onboarding'
 import { Dashboard } from './pages/Dashboard'
 import { Configuracoes } from './pages/Configuracoes'
 import { NotasFiscaisList } from './pages/fiscal/NotasFiscaisList'
+import { NotasServicoList } from './pages/fiscal/NotasServicoList'
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<Dashboard />} />
               <Route path="notas-fiscais" element={<NotasFiscaisList />} />
+              <Route path="notas-servico" element={<NotasServicoList />} />
               <Route path="configuracoes" element={<Configuracoes />} />
             </Route>
           </Route>

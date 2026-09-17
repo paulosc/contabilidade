@@ -4,9 +4,36 @@
       "collectionGroup": "configuracoes",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
-        { "fieldPath": "tipo", "order": "ASCENDING" },
-        { "fieldPath": "ativo", "order": "ASCENDING" },
-        { "fieldPath": "sincronizacao.proximaPermitidaEm", "order": "ASCENDING" }
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ativo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sincronizacao.proximaPermitidaEm",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "configuracoes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "tipo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "nfseAtivo",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sincronizacaoNfse.proximaPermitidaEm",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

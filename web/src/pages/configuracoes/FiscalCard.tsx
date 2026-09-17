@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { Check, FileText, PlugZap, Power, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react'
+import { Check, FileSpreadsheet, FileText, PlugZap, Power, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { functions } from '../../lib/firebase'
 import { useDocumento } from '../../services/firestore'
@@ -44,6 +44,7 @@ export function FiscalCard() {
   const validoAte = cert?.validoAte?.toDate?.()
   const diasRestantes = validoAte ? diasAte(validoAte) : null
   const sync = config?.sincronizacao
+  const syncNfse = config?.sincronizacaoNfse
   const proxima = sync?.proximaPermitidaEm?.toDate?.()
 
   async function chamar<T>(nome: string, dados: unknown, chave: string): Promise<T | null> {
@@ -123,6 +124,37 @@ export function FiscalCard() {
     }
     const r = await chamar('ativarIntegracaoFiscal', { ativo: ativar }, 'ativar')
     if (r) setMsg({ tipo: 'sucesso', texto: ativar ? 'Integração ativada. A sincronização automática roda de hora em hora.' : 'Integração desativada.' })
+  }
+
+  async function sincronizarNfse() {
+    const r = await chamar<{ executou: boolean; motivo?: string; documentosProcessados: number; nsuInicial: string; nsuFinal: string; mensagemRetorno?: string }>(
+      'sincronizarNfseAgora',
+      {},
+      'nfse-sincronizar',
+    )
+    if (!r) return
+    setMsg(
+      r.executou
+        ? {
+            tipo: 'sucesso',
+            texto: `${r.documentosProcessados} NFS-e processada(s). NSU ${nsuLegivel(r.nsuInicial)} → ${nsuLegivel(r.nsuFinal)}.${r.mensagemRetorno ? ` ${r.mensagemRetorno}` : ''}`,
+          }
+        : { tipo: 'info', texto: r.motivo ?? 'Busca de NFS-e não executada.' },
+    )
+  }
+
+  async function alternarNfse() {
+    const ativar = !config?.nfseAtivo
+    if (
+      !ativar &&
+      !(await confirmar('Desativar a busca automática de notas de serviço? As notas já baixadas continuam disponíveis.', {
+        titulo: 'Desativar NFS-e',
+      }))
+    ) {
+      return
+    }
+    const r = await chamar('ativarNfse', { ativo: ativar }, 'nfse-ativar')
+    if (r) setMsg({ tipo: 'sucesso', texto: ativar ? 'Busca de NFS-e ativada. Roda de hora em hora.' : 'Busca de NFS-e desativada.' })
   }
 
   async function remover() {
@@ -223,6 +255,47 @@ export function FiscalCard() {
               <FileText className="h-3.5 w-3.5" /> Ver notas fiscais
             </Botao>
           </Link>
+        </div>
+      )}
+
+      {/* ---------- NFS-e (nota de serviço, ADN nacional) ---------- */}
+      {cert && (
+        <div className="mt-4 rounded-lg border border-slate-200 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="flex items-center gap-2 font-medium text-slate-900">
+                <FileSpreadsheet className="h-4 w-4" /> Notas de serviço (NFS-e)
+              </p>
+              <p className="text-xs text-slate-500">
+                Busca no Ambiente de Dados Nacional as NFS-e em que a empresa é prestadora ou tomadora.
+                Usa o mesmo certificado. Serviço diferente da NF-e, com NSU próprio.
+              </p>
+              {syncNfse && (
+                <p className="mt-1 text-xs text-slate-600">
+                  {SITUACOES_SYNC_FISCAL[syncNfse.status]} · NSU {nsuLegivel(syncNfse.ultimoNsu)} de {nsuLegivel(syncNfse.maxNsu)}
+                  {syncNfse.ultimaSincronizacao ? ` · última busca em ${formatData(syncNfse.ultimaSincronizacao)}` : ''}
+                  {syncNfse.documentosProcessados ? ` · ${syncNfse.documentosProcessados} documento(s)` : ''}
+                </p>
+              )}
+              {syncNfse?.mensagemRetorno && <p className="mt-1 text-xs text-red-700">{syncNfse.mensagemRetorno}</p>}
+            </div>
+            {config?.nfseAtivo ? <Badge tom="verde">Ativa</Badge> : <Badge tom="amarelo">Inativa</Badge>}
+          </div>
+          {ehAdmin && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Botao tamanho="sm" variante={config?.nfseAtivo ? 'secundario' : 'primario'} carregando={ocupado === 'nfse-ativar'} onClick={() => void alternarNfse()}>
+                <Power className="h-3.5 w-3.5" /> {config?.nfseAtivo ? 'Desativar NFS-e' : 'Ativar NFS-e'}
+              </Botao>
+              <Botao tamanho="sm" variante="secundario" carregando={ocupado === 'nfse-sincronizar'} onClick={() => void sincronizarNfse()}>
+                <RefreshCw className="h-3.5 w-3.5" /> Buscar NFS-e agora
+              </Botao>
+              <Link to="/notas-servico" className="ml-auto">
+                <Botao tamanho="sm" variante="secundario">
+                  <FileText className="h-3.5 w-3.5" /> Ver notas de serviço
+                </Botao>
+              </Link>
+            </div>
+          )}
         </div>
       )}
 

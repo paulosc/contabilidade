@@ -218,3 +218,62 @@ Rules de verdade, provando que:
   (`RecepcaoEvento`) e não faz parte deste módulo.
 - Empresa que não usa o `distNSU` por mais de 60 dias tem a geração de NSU interrompida; o primeiro
   acesso depois disso volta `137` e só as consultas seguintes (respeitando a hora) trazem documentos.
+
+
+---
+
+# Integração NFS-e (nota de serviço) — ADN nacional
+
+A NFS-e **não passa pelo Ambiente Nacional da NF-e**: é outro documento, com chave de 50 dígitos
+(a da NF-e tem 44), outro leiaute e outro ambiente. Por isso existe um segundo provider.
+
+A diferença de fundo entre os dois serviços:
+
+| | NF-e (SEFAZ) | NFS-e (ADN) |
+| --- | --- | --- |
+| Documento | mercadoria, modelo 55 | serviço |
+| Chave de acesso | 44 dígitos | 50 dígitos |
+| **O emitente recebe as próprias notas?** | **Não** (rejeição 641) | **Sim** |
+| Protocolo | SOAP/XML | REST/JSON |
+| Certificado | ICP-Brasil, raiz do CNPJ | o mesmo |
+
+## Documentação oficial usada
+
+| O que | Onde |
+| --- | --- |
+| Métodos da API de contribuintes | **Manual dos Contribuintes — Guia para utilização das APIs do ADN**, v1.0 (12/02/2026) |
+| Semântica da distribuição (lote de 50, ultNSU/maxNSU, espera de 1 h) | **Manual de Municípios — APIs do ADN**, v1.2 |
+| Leiaute da NFS-e e da DPS | pacote **NFSe-ESQUEMAS_XSD v1.01** (09/02/2026), namespace `http://www.sped.fazenda.gov.br/nfse` |
+
+Todos em gov.br/nfse → Biblioteca → Documentação técnica → Documentação atual.
+
+```
+Produção     https://adn.nfse.gov.br/contribuintes
+Prod. restrita https://adn.producaorestrita.nfse.gov.br/contribuintes
+GET /DFe/{ultimoNSU}          até 50 documentos a partir do NSU informado
+GET /NFSe/{chave}/Eventos     eventos vinculados a uma NFS-e
+```
+
+O manual é explícito sobre quem é atendido: *"permitem que o contribuinte consulte documentos
+fiscais de serviços em que figure como **emitente**, tomador ou intermediário"*.
+
+## O que foi reaproveitado
+
+Certificado A1 cifrado, controle de NSU por empresa, janela de 1 hora, trava de concorrência,
+idempotência pela chave de acesso, Storage, auditoria, Scheduler e as regras multi-tenant — tudo
+igual ao da NF-e. O que é novo é só o adapter (`adnNacional.ts`) e a leitura do XML
+(`documentoServico.ts`).
+
+Cada nota guarda o **papel** da empresa: `prestador` (receita) ou `tomador` (despesa).
+
+## Limite conhecido desta implementação
+
+O Swagger do ADN e as próprias APIs exigem certificado cliente — as tentativas de leitura sem
+certificado devolveram HTTP 403 / conexão recusada. Então os **nomes exatos dos campos JSON** da
+resposta não puderam ser conferidos: o que os manuais garantem é a semântica.
+
+Por isso `interpretarJson` aceita as grafias plausíveis (`LoteDFe`/`Lote`/`Documentos`,
+`ArquivoXml`/`Xml`/`DocumentoXml`, `ultNSU`/`UltimoNSU`…), é insensível a maiúsculas, aceita o XML
+em base64 com ou sem gzip ou em texto puro, e **grava em `sincronizacaoNfse.formatoRecebido` as
+chaves que realmente vieram**. Uma execução real contra o ADN confirma o formato; se algum nome
+não estiver previsto, é uma linha a acrescentar na lista.

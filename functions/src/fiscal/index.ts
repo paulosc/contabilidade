@@ -17,14 +17,18 @@ import {
   auditoriaRef,
   configFiscalRef,
   notasRef,
+  notasServicoRef,
   privadoFiscalRef,
   resolverCaminhoXml,
+  resolverCaminhoXmlServico,
   type ConfiguracaoFiscal,
   type NotaFiscal,
+  type NotaServico,
   type OperacaoAuditada,
   type PrivadoFiscal,
 } from './modelo'
 import { ESPERA_SEM_DOCUMENTOS_MS, mesmaRaizCnpj, resolverCredenciais, sincronizarEmpresa } from './sincronizacao'
+import { ESPERA_NFSE_MS, sincronizarNfseDaEmpresa } from './sincronizacaoNfse'
 import { avaliarTesteDeConexao, explicarTesteDeConexao, type AmbienteFiscal } from '../providers/fiscal/DistribuicaoDFeProvider'
 import { UF_IBGE } from '../providers/fiscal/sefazNacional'
 
@@ -396,3 +400,133 @@ export const estadoInicialSincronizacao = () => ({
 })
 
 export type { ConfiguracaoFiscal, PrivadoFiscal }
+
+// ---------- NFS-e (ADN nacional) ----------
+
+/**
+ * Liga/desliga a busca de NFS-e. É separada da NF-e de propósito: são serviços diferentes
+ * (NF-e de mercadoria na SEFAZ, NFS-e de serviço no ADN) e nem toda empresa usa os dois.
+ */
+export const ativarNfse = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid)
+  const { ativo } = (req.data ?? {}) as { ativo?: boolean }
+  const config = await lerConfig(id)
+  if (ativo && !config?.certificado) {
+    throw new HttpsError('failed-precondition', 'Cadastre o certificado digital antes de ativar a busca de NFS-e.')
+  }
+  await configFiscalRef(id).set(
+    {
+      tipo: 'fiscal',
+      nfseAtivo: Boolean(ativo),
+      sincronizacaoNfse: {
+        ultimoNsu: config?.sincronizacaoNfse?.ultimoNsu ?? '0',
+        maxNsu: config?.sincronizacaoNfse?.maxNsu ?? '0',
+        proximaPermitidaEm: config?.sincronizacaoNfse?.proximaPermitidaEm ?? Timestamp.now(),
+        status: ativo ? (config?.sincronizacaoNfse?.status ?? 'ocioso') : 'ocioso',
+        documentosEncontrados: config?.sincronizacaoNfse?.documentosEncontrados ?? 0,
+        documentosProcessados: config?.sincronizacaoNfse?.documentosProcessados ?? 0,
+        erros: config?.sincronizacaoNfse?.erros ?? 0,
+      },
+      atualizadoEm: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  )
+  await auditar(id, ativo ? 'integracao_ativada' : 'integracao_desativada', req.auth!.uid, { email, detalhe: 'NFS-e' })
+  return { ok: true }
+})
+
+/** Busca as NFS-e agora, só desta empresa. Respeita a janela de 1 h exigida pelo ADN. */
+export const sincronizarNfseAgora = onCall(
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 540, memory: '1GiB' },
+  async (req) => {
+    const { id, email } = await exigirMembro(req.auth?.uid)
+    const resultado = await sincronizarNfseDaEmpresa(id, FISCAL_CRYPTO_KEY.value(), { origem: 'manual' })
+    await auditar(id, 'sincronizacao_manual', req.auth!.uid, {
+      email,
+      detalhe: resultado.executou
+        ? `NFS-e · ${resultado.documentosProcessados} documento(s), NSU ${resultado.nsuInicial} → ${resultado.nsuFinal}`
+        : (resultado.motivo ?? 'não executada'),
+    })
+    return resultado
+  },
+)
+
+/** Devolve o XML de uma NFS-e da própria empresa, registrando quem baixou. */
+export const xmlNotaServico = onCall({ region: REGIAO, timeoutSeconds: 60 }, async (req) => {
+  const { id, email } = await exigirMembro(req.auth?.uid)
+  const { chaveAcesso, storagePath } = (req.data ?? {}) as { chaveAcesso?: string; storagePath?: string }
+  if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
+
+  const snap = await notasServicoRef(id).doc(chaveAcesso).get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Nota de serviço não encontrada nesta empresa')
+  const nota = snap.data() as NotaServico
+
+  const caminho = resolverCaminhoXmlServico(id, nota, storagePath)
+  if (!caminho) throw new HttpsError('not-found', 'Esta nota não tem esse XML guardado')
+
+  const arquivo = storage.bucket().file(caminho)
+  const [existe] = await arquivo.exists()
+  if (!existe) throw new HttpsError('not-found', 'Arquivo não encontrado no armazenamento')
+  const [meta] = await arquivo.getMetadata()
+  if (Number(meta.size ?? 0) > MAX_XML_BYTES) throw new HttpsError('failed-precondition', 'Arquivo grande demais para download direto')
+
+  const [conteudo] = await arquivo.download()
+  await auditar(id, 'xml_baixado', req.auth!.uid, { email, chaveAcesso })
+  return { chaveAcesso, nomeArquivo: `${chaveAcesso}.xml`, xml: conteudo.toString('utf8') }
+})
+
+/**
+ * Worker das NFS-e. Separado do da NF-e porque o NSU e a janela de 1 hora são de cada serviço:
+ * uma empresa pode estar em dia num e bloqueada no outro.
+ */
+export const sincronizarNfsePeriodico = onSchedule(
+  {
+    region: REGIAO,
+    schedule: 'every 60 minutes',
+    timeZone: 'America/Sao_Paulo',
+    secrets: SEGREDOS_FISCAIS,
+    timeoutSeconds: 540,
+    memory: '1GiB',
+  },
+  async () => {
+    const agora = Timestamp.now()
+    const limite = Math.max(1, FISCAL_MAX_EMPRESAS.value())
+    const fila = await db
+      .collectionGroup('configuracoes')
+      .where('tipo', '==', 'fiscal')
+      .where('nfseAtivo', '==', true)
+      .where('sincronizacaoNfse.proximaPermitidaEm', '<=', agora)
+      .orderBy('sincronizacaoNfse.proximaPermitidaEm', 'asc')
+      .limit(limite)
+      .get()
+
+    logger.info('nfse: worker iniciado', { operacao: 'workerNfse', empresas: fila.size, limite })
+
+    let total = 0
+    for (const doc of fila.docs) {
+      const empresaId = doc.ref.parent.parent?.id
+      if (!empresaId) continue
+      try {
+        const r = await sincronizarNfseDaEmpresa(empresaId, FISCAL_CRYPTO_KEY.value(), { origem: 'agendada' })
+        total += r.documentosProcessados
+      } catch (e) {
+        logger.error('nfse: worker falhou para a empresa', { empresaId, erro: (e as Error).message })
+        await configFiscalRef(empresaId)
+          .set(
+            {
+              sincronizacaoNfse: {
+                status: 'erro',
+                mensagemRetorno: (e as Error).message,
+                proximaPermitidaEm: Timestamp.fromMillis(Date.now() + ESPERA_NFSE_MS),
+              },
+              atualizadoEm: FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          )
+          .catch(() => undefined)
+      }
+    }
+
+    logger.info('nfse: worker concluído', { operacao: 'workerNfse', empresas: fila.size, documentosProcessados: total })
+  },
+)

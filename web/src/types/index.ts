@@ -106,6 +106,9 @@ export interface ConfiguracaoFiscal {
   uf?: string
   certificado?: ResumoCertificadoFiscal
   sincronizacao: EstadoSincronizacaoFiscal
+  /** Busca de NFS-e: ligada separadamente da NF-e */
+  nfseAtivo?: boolean
+  sincronizacaoNfse?: EstadoSincronizacaoNfse
   atualizadoEm: Timestamp
 }
 
@@ -221,4 +224,82 @@ export interface RegistroAuditoria {
   detalhe?: string
   chaveAcesso?: string
   criadoEm: Timestamp
+}
+
+// ---------- NFS-e (nota fiscal de serviço, ADN nacional) ----------
+
+export interface EstadoSincronizacaoNfse {
+  ultimoNsu: string
+  maxNsu: string
+  ultimaSincronizacao?: Timestamp
+  proximaPermitidaEm?: Timestamp
+  status: SituacaoSyncFiscal
+  mensagemRetorno?: string
+  documentosEncontrados: number
+  documentosProcessados: number
+  erros: number
+  /** Chaves do JSON devolvido pelo ADN, para conferência do formato real */
+  formatoRecebido?: string[]
+}
+
+export type StatusNotaServico = 'gerada' | 'cancelada'
+export const STATUS_NOTA_SERVICO: Record<StatusNotaServico, string> = {
+  gerada: 'Gerada',
+  cancelada: 'Cancelada',
+}
+
+export type PapelNaNotaServico = 'prestador' | 'tomador' | 'outro'
+export const PAPEIS_NOTA_SERVICO: Record<PapelNaNotaServico, string> = {
+  prestador: 'Emitida (receita)',
+  tomador: 'Recebida (despesa)',
+  outro: 'Outro',
+}
+
+export interface EventoNotaServico {
+  tipoEvento: string
+  descricao: string
+  numeroSequencial: string
+  dataEvento?: Timestamp
+  nsu?: string
+  storagePath?: string
+}
+
+/** /empresas/{id}/notasServico/{chaveAcesso} — chave de 50 dígitos */
+export interface NotaServico {
+  chaveAcesso: string
+  numero?: string
+  serieDps?: string
+  numeroDps?: string
+  dataEmissao?: Timestamp
+  dataProcessamento?: Timestamp
+  competencia?: string
+  situacao?: string
+  ambienteGerador?: string
+  municipioEmissao?: string
+  municipioPrestacao?: string
+  codigoMunicipio?: string
+  cnpjPrestador?: string
+  razaoSocialPrestador?: string
+  inscricaoMunicipalPrestador?: string
+  cnpjTomador?: string
+  razaoSocialTomador?: string
+  descricaoServico?: string
+  codigoTributacaoNacional?: string
+  codigoTributacaoMunicipal?: string
+  valorServico?: number
+  baseCalculo?: number
+  aliquota?: number
+  valorIss?: number
+  valorRetencoes?: number
+  valorLiquido?: number
+  papel: PapelNaNotaServico
+  status: StatusNotaServico
+  nsu?: string
+  storagePath?: string
+  hashXml?: string
+  eventos?: EventoNotaServico[]
+  ambiente: AmbienteFiscal
+  importadoEm: Timestamp
+  criadoEm: Timestamp
+  atualizadoEm: Timestamp
 }

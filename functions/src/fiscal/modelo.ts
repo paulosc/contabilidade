@@ -17,6 +17,7 @@ import { db } from '../lib/admin'
 import type { AmbienteFiscal } from '../providers/fiscal/DistribuicaoDFeProvider'
 
 export const COL_NOTAS = 'notasFiscais'
+export const COL_NOTAS_SERVICO = 'notasServico'
 export const COL_SINCRONIZACOES = 'sincronizacoesFiscais'
 export const COL_AUDITORIA = 'auditoriaFiscal'
 
@@ -24,8 +25,15 @@ export const raizRef = (empresaId: string) => db.collection('empresas').doc(empr
 export const privadoFiscalRef = (empresaId: string) => raizRef(empresaId).collection('privado').doc('fiscal')
 export const configFiscalRef = (empresaId: string) => raizRef(empresaId).collection('configuracoes').doc('fiscal')
 export const notasRef = (empresaId: string) => raizRef(empresaId).collection(COL_NOTAS)
+export const notasServicoRef = (empresaId: string) => raizRef(empresaId).collection(COL_NOTAS_SERVICO)
 export const sincronizacoesRef = (empresaId: string) => raizRef(empresaId).collection(COL_SINCRONIZACOES)
 export const auditoriaRef = (empresaId: string) => raizRef(empresaId).collection(COL_AUDITORIA)
+
+/** Caminho do XML da NFS-e no Storage (chave de 50 dígitos; a competência organiza as pastas). */
+export function caminhoXmlServico(empresaId: string, chave: string, sufixo: string): string {
+  const ano = chave.length >= 40 ? `20${chave.slice(36, 38)}` : String(new Date().getFullYear())
+  return `empresas/${empresaId}/nfse/${ano}/${chave}-${sufixo}.xml`
+}
 
 /** Caminho do XML no Storage. A chave de acesso no nome mantém o arquivo único por documento. */
 export function caminhoXml(empresaId: string, chave: string, sufixo: string): string {
@@ -111,6 +119,23 @@ export interface EstadoSincronizacao {
   lockPor?: string
 }
 
+/** Estado da distribuição de NFS-e pelo ADN — NSU próprio, separado do da NF-e. */
+export interface EstadoSincronizacaoNfse {
+  ultimoNsu: string
+  maxNsu: string
+  ultimaSincronizacao?: Timestamp
+  proximaPermitidaEm?: Timestamp
+  status: SituacaoSync
+  mensagemRetorno?: string
+  documentosEncontrados: number
+  documentosProcessados: number
+  erros: number
+  lockEm?: Timestamp
+  lockPor?: string
+  /** Chaves do JSON que o ADN devolveu, para conferir o formato real na primeira execução */
+  formatoRecebido?: string[]
+}
+
 export interface ConfiguracaoFiscal {
   /** Discriminador do documento dentro do collection group `configuracoes` (usado pelo worker) */
   tipo: 'fiscal'
@@ -121,6 +146,9 @@ export interface ConfiguracaoFiscal {
   uf?: string
   certificado?: ResumoCertificado
   sincronizacao: EstadoSincronizacao
+  /** Ligada separadamente: nem toda empresa emite nota de serviço */
+  nfseAtivo?: boolean
+  sincronizacaoNfse?: EstadoSincronizacaoNfse
   atualizadoEm: Timestamp
 }
 
@@ -224,4 +252,73 @@ export interface RegistroAuditoria {
   detalhe?: string
   chaveAcesso?: string
   criadoEm: Timestamp
+}
+
+// ---------- notas de serviço (NFS-e) ----------
+
+export type StatusNotaServico = 'gerada' | 'cancelada'
+
+export interface EventoNotaServico {
+  tipoEvento: string
+  descricao: string
+  numeroSequencial: string
+  dataEvento?: Timestamp
+  nsu?: string
+  storagePath?: string
+}
+
+/** /empresas/{id}/notasServico/{chaveAcesso} — chave de 50 dígitos */
+export interface NotaServico {
+  chaveAcesso: string
+  numero?: string
+  serieDps?: string
+  numeroDps?: string
+  dataEmissao?: Timestamp
+  dataProcessamento?: Timestamp
+  /** 'YYYY-MM' */
+  competencia?: string
+  situacao?: string
+  ambienteGerador?: string
+  municipioEmissao?: string
+  municipioPrestacao?: string
+  codigoMunicipio?: string
+  cnpjPrestador?: string
+  razaoSocialPrestador?: string
+  inscricaoMunicipalPrestador?: string
+  cnpjTomador?: string
+  razaoSocialTomador?: string
+  descricaoServico?: string
+  codigoTributacaoNacional?: string
+  codigoTributacaoMunicipal?: string
+  valorServico?: number
+  baseCalculo?: number
+  aliquota?: number
+  valorIss?: number
+  valorRetencoes?: number
+  valorLiquido?: number
+  /** A empresa é a prestadora (receita) ou a tomadora (despesa) desta nota? */
+  papel: 'prestador' | 'tomador' | 'outro'
+  status: StatusNotaServico
+  nsu?: string
+  storagePath?: string
+  hashXml?: string
+  eventos?: EventoNotaServico[]
+  ambiente: AmbienteFiscal
+  importadoEm: Timestamp
+  criadoEm: Timestamp
+  atualizadoEm: Timestamp
+}
+
+/** Mesma proteção do XML da NF-e: só caminhos gravados no documento e dentro da empresa. */
+export function resolverCaminhoXmlServico(
+  empresaId: string,
+  nota: { storagePath?: string; eventos?: Array<{ storagePath?: string }> },
+  pedido?: string,
+): string | null {
+  const prefixo = `empresas/${empresaId}/nfse/`
+  const permitidos = [nota.storagePath, ...(nota.eventos ?? []).map((e) => e.storagePath)].filter(
+    (c): c is string => Boolean(c) && c!.startsWith(prefixo),
+  )
+  if (pedido) return permitidos.includes(pedido) ? pedido : null
+  return permitidos[0] ?? null
 }

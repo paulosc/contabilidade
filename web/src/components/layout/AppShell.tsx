@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, LogOut, Menu, ScanLine, Settings, X } from 'lucide-react'
+import { FileSpreadsheet, LayoutDashboard, LogOut, Menu, ScanLine, Settings, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
@@ -9,7 +9,8 @@ import { IconeMarca } from '../Marca'
 
 const itens = [
   { para: '/', rotulo: 'Painel', Icone: LayoutDashboard, fim: true },
-  { para: '/notas-fiscais', rotulo: 'Notas fiscais', Icone: ScanLine, fim: undefined },
+  { para: '/notas-fiscais', rotulo: 'Notas fiscais (NF-e)', Icone: ScanLine, fim: undefined },
+  { para: '/notas-servico', rotulo: 'Notas de serviço', Icone: FileSpreadsheet, fim: undefined },
   { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined },
 ]
 

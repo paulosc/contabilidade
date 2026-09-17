@@ -20,4 +20,8 @@ export {
   statusFiscal,
   xmlNotaFiscal,
   sincronizarFiscalPeriodico,
+  ativarNfse,
+  sincronizarNfseAgora,
+  xmlNotaServico,
+  sincronizarNfsePeriodico,
 } from './fiscal'
