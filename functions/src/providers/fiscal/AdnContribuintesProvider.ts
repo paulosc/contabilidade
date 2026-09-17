@@ -93,6 +93,9 @@ export interface AdnContribuintesProvider {
   /** GET /NFSe/{chaveAcesso}/Eventos — eventos vinculados a uma NFS-e. */
   eventosDaChave(chaveAcesso: string): Promise<RespostaDistribuicaoAdn>
   /** GET /danfse/{chaveAcesso} — PDF do documento auxiliar (DANFSe). */
+  /** Sonda um endereço oficial com o mesmo certificado, para ler o Swagger que exige mTLS. */
+  sondar(urlCompleta: string): Promise<{ url: string; status: number; corpo: string }>
+
   danfse(chaveAcesso: string): Promise<Buffer>
   encerrar(): void
 }

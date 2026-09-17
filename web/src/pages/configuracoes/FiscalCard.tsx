@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { Check, FileSpreadsheet, FileText, PlugZap, Power, RefreshCw, ShieldCheck, Trash2, Upload } from 'lucide-react'
+import { Check, FileSpreadsheet, FileText, PlugZap, Power, RefreshCw, ShieldCheck, Stethoscope, Trash2, Upload } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { functions } from '../../lib/firebase'
 import { useDocumento } from '../../services/firestore'
@@ -124,6 +124,20 @@ export function FiscalCard() {
     }
     const r = await chamar('ativarIntegracaoFiscal', { ativo: ativar }, 'ativar')
     if (r) setMsg({ tipo: 'sucesso', texto: ativar ? 'Integração ativada. A sincronização automática roda de hora em hora.' : 'Integração desativada.' })
+  }
+
+  /**
+   * Lê o Swagger oficial das APIs nacionais pelo backend, que tem o certificado.
+   * Temporário: serve para descobrir o caminho certo do DANFSe e o da emissão.
+   */
+  async function diagnosticar() {
+    const r = await chamar<{ resultados: Array<{ url: string; status: number; corpo: string }> }>(
+      'diagnosticoNfseNacional',
+      {},
+      'diagnostico',
+    )
+    if (!r) return
+    setMsg({ tipo: 'info', texto: r.resultados.map((x) => `${x.url} → ${x.status}`).join(' · ') })
   }
 
   async function sincronizarNfse() {
@@ -290,6 +304,9 @@ export function FiscalCard() {
               </Botao>
               <Botao tamanho="sm" variante="secundario" carregando={ocupado === 'nfse-sincronizar'} onClick={() => void sincronizarNfse()}>
                 <RefreshCw className="h-3.5 w-3.5" /> Buscar NFS-e agora
+              </Botao>
+              <Botao tamanho="sm" variante="secundario" carregando={ocupado === 'diagnostico'} onClick={() => void diagnosticar()}>
+                <Stethoscope className="h-3.5 w-3.5" /> Diagnosticar APIs
               </Botao>
               <Link to="/notas-servico" className="ml-auto">
                 <Botao tamanho="sm" variante="secundario">

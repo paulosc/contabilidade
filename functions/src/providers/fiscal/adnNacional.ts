@@ -145,6 +145,19 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
    * terminando em `/danfse`, o que deixa ambíguo se o segmento se repete. Como o Swagger exige
    * certificado e não pôde ser lido, tentamos as duas formas e registramos qual respondeu.
    */
+  /**
+   * Sonda um endereço do ambiente nacional usando o mesmo certificado, e devolve status e um
+   * pedaço do corpo. Serve para ler o Swagger oficial — que exige mTLS e por isso não abre no
+   * navegador — em vez de adivinhar caminho de API. Só aceita os hosts oficiais.
+   */
+  async sondar(urlCompleta: string): Promise<{ url: string; status: number; corpo: string }> {
+    const url = new URL(urlCompleta)
+    const permitidos = ['adn.nfse.gov.br', 'sefin.nfse.gov.br', 'adn.producaorestrita.nfse.gov.br', 'sefin.producaorestrita.nfse.gov.br']
+    if (!permitidos.includes(url.hostname)) throw new Error(`Host fora do ambiente nacional: ${url.hostname}`)
+    const r = await this.http('', urlCompleta, 'application/json, text/html, */*')
+    return { url: urlCompleta, status: r.status, corpo: r.corpo.slice(0, 6000) }
+  }
+
   async danfse(chaveAcesso: string): Promise<Buffer> {
     const chave = (chaveAcesso ?? '').replace(/\D/g, '')
     if (chave.length !== 50) throw new Error('Chave de acesso da NFS-e deve ter 50 dígitos')

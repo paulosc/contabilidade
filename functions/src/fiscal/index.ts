@@ -583,6 +583,46 @@ export const pdfNotaServico = onCall(
 )
 
 /**
+ * Lê o Swagger oficial das APIs nacionais usando o certificado da empresa.
+ *
+ * O Swagger do SEFIN e do ADN exige mTLS, então não abre no navegador — e sem ele o caminho do
+ * DANFSe e o da emissão ficariam no chute. Os endereços são fixos aqui: o cliente não escolhe
+ * URL, para o certificado não virar um proxy de saída.
+ */
+export const diagnosticoNfseNacional = onCall(
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
+  async (req) => {
+    const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+    const credenciais = await resolverCredenciaisNfse(id, FISCAL_CRYPTO_KEY.value())
+    const alvos = [
+      'https://sefin.nfse.gov.br/SefinNacional/swagger/v1/swagger.json',
+      'https://sefin.nfse.gov.br/SefinNacional/docs/index',
+      'https://adn.nfse.gov.br/danfse/swagger/v1/swagger.json',
+      'https://adn.nfse.gov.br/danfse/docs/index.html',
+      'https://adn.nfse.gov.br/contribuintes/swagger/v1/swagger.json',
+    ]
+    const resultados = []
+    try {
+      for (const alvo of alvos) {
+        try {
+          resultados.push(await credenciais.provider.sondar(alvo))
+        } catch (e) {
+          resultados.push({ url: alvo, status: 0, corpo: `ERRO: ${(e as Error).message}` })
+        }
+      }
+    } finally {
+      credenciais.provider.encerrar()
+    }
+    await auditar(id, 'xml_baixado', req.auth!.uid, { email, detalhe: 'diagnóstico das APIs nacionais' })
+    logger.info('nfse: diagnóstico das APIs nacionais', {
+      empresaId: id,
+      resumo: resultados.map((r) => `${r.url} → ${r.status} (${r.corpo.length}b)`),
+    })
+    return { resultados }
+  },
+)
+
+/**
  * Importa as NFS-e antigas direto do web service do município (padrão ABRASF 2.02).
  *
  * É o caminho para as notas anteriores à migração do município para o Emissor Nacional, que o

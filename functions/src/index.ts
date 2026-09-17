@@ -25,6 +25,7 @@ export {
   xmlNotaServico,
   pdfNotaServico,
   importarNfseMunicipal,
+  diagnosticoNfseNacional,
   salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'
