@@ -17,6 +17,7 @@ import { gunzipSync, inflateSync, unzipSync } from 'node:zlib'
 import {
   ADN_URLS,
   DANFSE_URLS,
+  SEFIN_URLS,
   type AdnContribuintesProvider,
   type CredenciaisAdn,
   type DocumentoServicoDistribuido,
@@ -67,7 +68,7 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     return this.cfg.endpoint || ADN_URLS[this.cfg.ambiente]
   }
 
-  private http(caminho: string, base?: string): Promise<RespostaHttp> {
+  private http(caminho: string, base?: string, accept = 'application/json'): Promise<RespostaHttp> {
     const url = new URL((base ?? this.base) + caminho)
     return new Promise((resolve, reject) => {
       const req = httpsRequest(
@@ -77,7 +78,7 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
           port: url.port || 443,
           path: url.pathname + url.search,
           headers: {
-            Accept: 'application/json',
+            Accept: accept,
             'Accept-Encoding': 'gzip, deflate',
             'User-Agent': 'contabilidade-fiscal/1.0',
           },
@@ -147,28 +148,53 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
   async danfse(chaveAcesso: string): Promise<Buffer> {
     const chave = (chaveAcesso ?? '').replace(/\D/g, '')
     if (chave.length !== 50) throw new Error('Chave de acesso da NFS-e deve ter 50 dígitos')
-    const base = DANFSE_URLS[this.cfg.ambiente]
-    const tentativas: Array<{ url: string; status: number; tipo?: string }> = []
 
-    for (const caminho of [`/${chave}`, `/danfse/${chave}`]) {
-      const r = await this.http(caminho, base)
-      const bytes = r.bytes ?? Buffer.from(r.corpo, 'utf8')
-      tentativas.push({ url: base + caminho, status: r.status, tipo: r.corpo.slice(0, 40) })
+    // As duas bases oficiais que servem o DANFSe, nas duas formas de caminho que a documentação
+    // deixa ambíguas. A primeira que devolver um PDF vence — e o log diz qual foi.
+    const candidatos = [
+      { base: DANFSE_URLS[this.cfg.ambiente], caminho: `/${chave}` },
+      { base: DANFSE_URLS[this.cfg.ambiente], caminho: `/danfse/${chave}` },
+      { base: SEFIN_URLS[this.cfg.ambiente], caminho: `/danfse/${chave}` },
+    ]
 
-      if (r.status === 403) {
-        throw new Error('O ADN recusou a conexão (HTTP 403) ao gerar o PDF: confira o certificado digital.')
+    const tentativas: string[] = []
+    let foraDoAr = false
+
+    for (const { base, caminho } of candidatos) {
+      // 5xx costuma ser instabilidade momentânea do ambiente nacional, não caminho errado
+      for (let tentativa = 1; tentativa <= 2; tentativa++) {
+        const r = await this.http(caminho, base, 'application/pdf, application/json')
+        const bytes = r.bytes ?? Buffer.from(r.corpo, 'utf8')
+        tentativas.push(`${base}${caminho} → HTTP ${r.status}`)
+
+        if (r.status === 403) {
+          throw new Error('O ambiente nacional recusou a conexão (HTTP 403) ao gerar o PDF: confira o certificado digital.')
+        }
+        if (r.status >= 200 && r.status < 300) {
+          if (ehPdf(bytes)) return bytes
+          // algumas respostas trazem o PDF em base64 dentro de um JSON
+          const doJson = pdfDentroDeJson(r.corpo)
+          if (doJson) return doJson
+        }
+        if (r.status >= 500) {
+          foraDoAr = true
+          if (tentativa === 1) {
+            await new Promise((ok) => setTimeout(ok, 1200))
+            continue
+          }
+        }
+        break
       }
-      if (r.status >= 200 && r.status < 300) {
-        if (ehPdf(bytes)) return bytes
-        // algumas respostas trazem o PDF em base64 dentro de um JSON
-        const doJson = pdfDentroDeJson(r.corpo)
-        if (doJson) return doJson
-      }
-      // 404 ou corpo que não é PDF: tenta o próximo formato de caminho
     }
 
-    const resumo = tentativas.map((t) => `${t.url} → HTTP ${t.status}`).join(' | ')
-    throw new Error(`O ADN não devolveu o PDF desta NFS-e. Tentativas: ${resumo}`)
+    const resumo = tentativas.join(' | ')
+    if (foraDoAr) {
+      throw new Error(
+        'O serviço nacional que gera o DANFSe está fora do ar neste momento (HTTP 5xx). ' +
+          `O XML da nota continua disponível aqui. Tentativas: ${resumo}`,
+      )
+    }
+    throw new Error(`O ambiente nacional não devolveu o PDF desta NFS-e. Tentativas: ${resumo}`)
   }
 }
 

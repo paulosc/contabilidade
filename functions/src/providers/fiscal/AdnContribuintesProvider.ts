@@ -38,6 +38,15 @@ export const DANFSE_URLS = {
   homologacao: 'https://adn.producaorestrita.nfse.gov.br/danfse',
 } as const
 
+/**
+ * SEFIN Nacional: é a interface que recebe o DPS e emite a NFS-e, e também serve o DANFSe.
+ * Base publicada em "APIs - Prod. Restrita e Produção" no portal da NFS-e nacional.
+ */
+export const SEFIN_URLS = {
+  producao: 'https://sefin.nfse.gov.br/SefinNacional',
+  homologacao: 'https://sefin.producaorestrita.nfse.gov.br/API/SefinNacional',
+} as const
+
 export interface CredenciaisAdn {
   /** CNPJ (14) ou CPF (11) do interessado, só dígitos */
   documento: string
