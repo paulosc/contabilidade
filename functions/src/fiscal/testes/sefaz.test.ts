@@ -185,6 +185,19 @@ describe('teste de conexão', () => {
     assert.equal(/recusou|falha|erro/i.test(msg), false)
   })
 
+  it('em produção, com maxNSU 0, explica que a numeração só começa no primeiro acesso', () => {
+    const msg = explicarTesteDeConexao(RETORNO.NENHUM_DOCUMENTO, '', 'producao', '000000000000000')
+    assert.match(msg, /certificado foi aceito/)
+    assert.match(msg, /não é retroativa/)
+    assert.match(msg, /1 hora/)
+  })
+
+  it('em produção, com NSU já gerado, não repete a explicação do primeiro acesso', () => {
+    const msg = explicarTesteDeConexao(RETORNO.NENHUM_DOCUMENTO, '', 'producao', '000000000000420')
+    assert.match(msg, /Não há documentos novos/)
+    assert.equal(/retroativa/.test(msg), false)
+  })
+
   it('diz claramente quando a SEFAZ recusou', () => {
     assert.match(explicarTesteDeConexao(RETORNO.CNPJ_DIFERE_CERTIFICADO, '', 'producao'), /recusou com o código 593/)
   })

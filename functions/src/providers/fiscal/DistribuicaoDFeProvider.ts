@@ -135,14 +135,24 @@ export function avaliarTesteDeConexao(cStat: string): 'ok' | 'atencao' | 'erro' 
 }
 
 /** Mensagem do teste de conexão — diferente da do fluxo de sincronização. */
-export function explicarTesteDeConexao(cStat: string, xMotivo: string, ambiente: AmbienteFiscal): string {
+export function explicarTesteDeConexao(cStat: string, xMotivo: string, ambiente: AmbienteFiscal, maxNSU?: string): string {
   const onde = ambiente === 'producao' ? 'produção' : 'homologação'
+  const aceito = `Conexão com a SEFAZ (${onde}) funcionando: o certificado foi aceito.`
+  const primeiroAcesso = Number(maxNSU ?? '0') === 0
   switch (cStat) {
     case RETORNO.DOCUMENTO_LOCALIZADO:
-      return `Conexão com a SEFAZ (${onde}) funcionando: o certificado foi aceito e já há documentos disponíveis para este CNPJ.`
+      return `${aceito} Já há documentos disponíveis para este CNPJ.`
     case RETORNO.NENHUM_DOCUMENTO:
     case RETORNO.NSU_SUPERIOR_AO_MAXIMO:
-      return `Conexão com a SEFAZ (${onde}) funcionando: o certificado foi aceito. Ainda não há documentos disponíveis para este CNPJ${ambiente === 'homologacao' ? ' — o que é o normal em homologação' : ''}.`
+      if (ambiente === 'homologacao') {
+        return `${aceito} Ainda não há documentos disponíveis para este CNPJ — o que é o normal em homologação.`
+      }
+      // NT 2014.002, item 3.4: para quem nunca usou o distNSU (ou ficou 60 dias sem usar), a
+      // geração de NSU só começa no primeiro acesso, e não é retroativa. O primeiro acesso volta
+      // 137; depois de 1 hora, as consultas seguintes já podem trazer documentos.
+      return primeiroAcesso
+        ? `${aceito} O maior NSU deste CNPJ ainda é 0: pela regra da SEFAZ, a numeração só começa a ser gerada no primeiro acesso ao serviço de distribuição, e não é retroativa. Clique em "Sincronizar agora" para iniciar a numeração e aguarde 1 hora — a partir daí as notas novas passam a chegar.`
+        : `${aceito} Não há documentos novos para este CNPJ no momento.`
     case RETORNO.CONSUMO_INDEVIDO:
       return `A SEFAZ (${onde}) respondeu, então a comunicação funciona, mas o CNPJ está bloqueado por 1 hora por consumo indevido. Tente de novo depois desse prazo.`
     default:

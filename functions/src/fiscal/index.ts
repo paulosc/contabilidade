@@ -262,7 +262,7 @@ export const testarConexaoFiscal = onCall(
         ok: situacao !== 'erro',
         situacao,
         cStat: r.cStat,
-        mensagem: explicarTesteDeConexao(r.cStat, r.xMotivo, credenciais.ambiente),
+        mensagem: explicarTesteDeConexao(r.cStat, r.xMotivo, credenciais.ambiente, r.maxNSU),
         maxNsu: r.maxNSU,
       }
     } catch (e) {
