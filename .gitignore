@@ -1,0 +1,22 @@
+# deps
+node_modules/
+# builds
+web/dist/
+functions/lib/
+# env / secrets
+.env
+.env.*
+!.env.example
+*.local
+functions/.runtimeconfig.json
+serviceAccount*.json
+# firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
