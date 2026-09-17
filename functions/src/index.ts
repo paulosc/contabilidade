@@ -1,0 +1,23 @@
+/**
+ * Ponto de entrada das Cloud Functions (gen2, southamerica-east1).
+ *
+ * Integração fiscal (NF-e): `sincronizarFiscalPeriodico` roda de hora em hora e busca no
+ * NFeDistribuicaoDFe (Ambiente Nacional) os documentos de cada empresa com certificado A1
+ * cadastrado. Detalhes em docs/FISCAL_NFE.md.
+ */
+import { setGlobalOptions } from 'firebase-functions/v2'
+import { REGIAO } from './lib/config'
+
+setGlobalOptions({ region: REGIAO, maxInstances: 10 })
+
+export { aoEscreverMembro, garantirClaims } from './triggers'
+export {
+  salvarCertificadoFiscal,
+  removerCertificadoFiscal,
+  ativarIntegracaoFiscal,
+  testarConexaoFiscal,
+  sincronizarFiscalAgora,
+  statusFiscal,
+  xmlNotaFiscal,
+  sincronizarFiscalPeriodico,
+} from './fiscal'

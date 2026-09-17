@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "configuracoes",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "tipo", "order": "ASCENDING" },
+        { "fieldPath": "ativo", "order": "ASCENDING" },
+        { "fieldPath": "sincronizacao.proximaPermitidaEm", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

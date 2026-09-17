@@ -1,0 +1,20 @@
+rules_version = '2';
+
+// Arquivos organizados por empresa: /empresas/{id}/fiscal/{ano}/{chave}-*.xml
+//
+// Isolamento por empresa via custom claim `empresaId`, definida pela Cloud Function
+// aoEscreverMembro (e garantida no login por garantirClaims). Os XMLs são gravados pelo
+// backend (Admin SDK, que não passa por estas regras) e lidos pela função xmlNotaFiscal,
+// que registra quem baixou o quê.
+service firebase.storage {
+  match /b/{bucket}/o {
+    function daEmpresa(empresaId) {
+      return request.auth != null && request.auth.token.empresaId == empresaId;
+    }
+
+    match /empresas/{empresaId}/{allPaths=**} {
+      allow read: if daEmpresa(empresaId);
+      allow write: if false;
+    }
+  }
+}

@@ -1,0 +1,76 @@
+rules_version = '2';
+
+// Modelo multi-tenant: cada empresa é um documento em /empresas/{id} e todos os seus dados
+// vivem em subcoleções. O acesso é liberado apenas para membros da empresa
+// (/empresas/{id}/membros/{uid}).
+//
+// Os documentos fiscais são baixados da SEFAZ pelas Cloud Functions com o certificado da
+// própria empresa: no cliente eles são só leitura, e o certificado é inacessível para todos.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function logado() {
+      return request.auth != null;
+    }
+
+    function membroPath(empresaId) {
+      return /databases/$(database)/documents/empresas/$(empresaId)/membros/$(request.auth.uid);
+    }
+
+    function ehMembro(empresaId) {
+      return logado() && exists(membroPath(empresaId));
+    }
+
+    function ehAdmin(empresaId) {
+      return logado() && exists(membroPath(empresaId))
+        && get(membroPath(empresaId)).data.papel == 'admin';
+    }
+
+    // Perfil do usuário (aponta para a empresa dele)
+    match /usuarios/{uid} {
+      allow read, create, update: if logado() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /empresas/{empresaId} {
+      // Qualquer usuário logado pode criar a própria empresa (onboarding),
+      // desde que se registre como criador.
+      allow create: if logado() && request.resource.data.criadoPor == request.auth.uid;
+      allow read: if ehMembro(empresaId);
+      allow update: if ehAdmin(empresaId)
+        && request.resource.data.criadoPor == resource.data.criadoPor;
+      allow delete: if false;
+
+      match /membros/{uid} {
+        allow read: if ehMembro(empresaId);
+        // O criador se adiciona como admin no mesmo batch do onboarding
+        // (getAfter enxerga o estado após o batch). Admins adicionam outros membros.
+        allow create: if logado() && (
+          (request.auth.uid == uid
+            && request.resource.data.papel == 'admin'
+            && getAfter(/databases/$(database)/documents/empresas/$(empresaId)).data.criadoPor == request.auth.uid)
+          || ehAdmin(empresaId)
+        );
+        allow update, delete: if ehAdmin(empresaId) && request.auth.uid != uid;
+      }
+
+      // Documentos de configuração (um por assunto, sem subcoleções). 'fiscal' é mantido pelo
+      // backend da NF-e (certificado, NSU, estado da sincronização) e por isso é só leitura aqui.
+      match /configuracoes/{doc} {
+        allow read: if ehMembro(empresaId);
+        allow write: if ehAdmin(empresaId) && doc != 'fiscal';
+      }
+
+      // Certificado digital A1 cifrado: nem o administrador alcança, só o backend.
+      match /privado/{doc=**} {
+        allow read, write: if false;
+      }
+
+      // ---------- Documentos fiscais (NF-e) ----------
+      // Baixados da SEFAZ pelas Cloud Functions. A equipe consulta; ninguém escreve pelo cliente.
+      match /notasFiscais/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
+      match /sincronizacoesFiscais/{doc=**} { allow read: if ehMembro(empresaId); allow write: if false; }
+      match /auditoriaFiscal/{doc=**}       { allow read: if ehAdmin(empresaId);  allow write: if false; }
+    }
+  }
+}
