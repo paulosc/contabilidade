@@ -594,11 +594,14 @@ export const diagnosticoNfseNacional = onCall(
   async (req) => {
     const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
     const credenciais = await resolverCredenciaisNfse(id, FISCAL_CRYPTO_KEY.value())
+    // O SEFIN respondeu que o /DANFSe "foi movido" (501) e apontou para o módulo danfse do ADN.
+    // Lá tudo dá 503, até a página de docs — então falta saber se o módulo responde em algum
+    // lugar. Sondamos os dois ambientes e as duas convenções de Swagger dessa plataforma.
     const fila = [
-      // a página de docs do SEFIN aponta a especificação para cá (sem .json no nome)
-      'https://sefin.nfse.gov.br/SefinNacional/swagger/docs/v1',
-      'https://sefin.nfse.gov.br/SefinNacional/docs/index',
-      'https://adn.nfse.gov.br/contribuintes/swagger/v1/swagger.json',
+      'https://adn.producaorestrita.nfse.gov.br/danfse/swagger/v1/swagger.json',
+      'https://adn.producaorestrita.nfse.gov.br/danfse/docs/index.html',
+      'https://adn.nfse.gov.br/danfse/swagger/docs/v1',
+      'https://adn.nfse.gov.br/danfse/',
     ]
     const vistos = new Set<string>()
     const resumo: string[] = []
