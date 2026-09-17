@@ -29,16 +29,6 @@ export const ADN_URLS = {
 } as const
 
 /**
- * API DANFSe: gera o PDF da NFS-e a partir da chave de acesso.
- * Manual de Municípios — APIs do ADN, item 1.5: "GET /danfse/{chaveAcesso} — Recupera o DANFSe
- * de uma NFS-e a partir de sua chave de acesso."
- */
-export const DANFSE_URLS = {
-  producao: 'https://adn.nfse.gov.br/danfse',
-  homologacao: 'https://adn.producaorestrita.nfse.gov.br/danfse',
-} as const
-
-/**
  * SEFIN Nacional: é a interface que recebe o DPS e emite a NFS-e, e também serve o DANFSe.
  * Base publicada em "APIs - Prod. Restrita e Produção" no portal da NFS-e nacional.
  */
@@ -92,11 +82,8 @@ export interface AdnContribuintesProvider {
   distribuirPorNsu(ultimoNSU: string): Promise<RespostaDistribuicaoAdn>
   /** GET /NFSe/{chaveAcesso}/Eventos — eventos vinculados a uma NFS-e. */
   eventosDaChave(chaveAcesso: string): Promise<RespostaDistribuicaoAdn>
-  /** GET /danfse/{chaveAcesso} — PDF do documento auxiliar (DANFSe). */
   /** Sonda um endereço oficial com o mesmo certificado, para ler o Swagger que exige mTLS. */
   sondar(urlCompleta: string): Promise<{ url: string; status: number; corpo: string }>
-
-  danfse(chaveAcesso: string): Promise<Buffer>
   encerrar(): void
 }
 

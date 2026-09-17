@@ -16,7 +16,6 @@ import { Agent, request as httpsRequest } from 'node:https'
 import { gunzipSync, inflateSync, unzipSync } from 'node:zlib'
 import {
   ADN_URLS,
-  DANFSE_URLS,
   type AdnContribuintesProvider,
   type CredenciaisAdn,
   type DocumentoServicoDistribuido,
@@ -138,13 +137,6 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
   }
 
   /**
-   * PDF do DANFSe. O ADN gera o documento auxiliar a partir do XML que ele já tem.
-   *
-   * O manual escreve o método como `GET /danfse/{chaveAcesso}` e a tabela de APIs dá a base
-   * terminando em `/danfse`, o que deixa ambíguo se o segmento se repete. Como o Swagger exige
-   * certificado e não pôde ser lido, tentamos as duas formas e registramos qual respondeu.
-   */
-  /**
    * Sonda um endereço do ambiente nacional usando o mesmo certificado, e devolve status e um
    * pedaço do corpo. Serve para ler o Swagger oficial — que exige mTLS e por isso não abre no
    * navegador — em vez de adivinhar caminho de API. Só aceita os hosts oficiais.
@@ -155,68 +147,6 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     if (!permitidos.includes(url.hostname)) throw new Error(`Host fora do ambiente nacional: ${url.hostname}`)
     const r = await this.http('', urlCompleta, 'application/json, text/html, */*')
     return { url: urlCompleta, status: r.status, corpo: r.corpo.slice(0, 400_000) }
-  }
-
-  async danfse(chaveAcesso: string): Promise<Buffer> {
-    const chave = (chaveAcesso ?? '').replace(/\D/g, '')
-    if (chave.length !== 50) throw new Error('Chave de acesso da NFS-e deve ter 50 dígitos')
-
-    // Só o módulo danfse do ADN serve o PDF. O /DANFSe do SEFIN responde 501 "este serviço foi
-    // movido" (está assim no próprio Swagger dele), então não vale a pena bater lá. A documentação
-    // deixa ambíguo se o segmento /danfse se repete no caminho; tentamos as duas formas.
-    const candidatos = [
-      { base: DANFSE_URLS[this.cfg.ambiente], caminho: `/${chave}` },
-      { base: DANFSE_URLS[this.cfg.ambiente], caminho: `/danfse/${chave}` },
-    ]
-
-    const tentativas: string[] = []
-    let foraDoAr = false
-    let semServidor = false
-
-    for (const { base, caminho } of candidatos) {
-      // 5xx costuma ser instabilidade momentânea do ambiente nacional, não caminho errado
-      for (let tentativa = 1; tentativa <= 2; tentativa++) {
-        const r = await this.http(caminho, base, 'application/pdf, application/json')
-        const bytes = r.bytes ?? Buffer.from(r.corpo, 'utf8')
-        tentativas.push(`${base}${caminho} → HTTP ${r.status}`)
-
-        if (r.status === 403) {
-          throw new Error('O ambiente nacional recusou a conexão (HTTP 403) ao gerar o PDF: confira o certificado digital.')
-        }
-        if (r.status >= 200 && r.status < 300) {
-          if (ehPdf(bytes)) return bytes
-          // algumas respostas trazem o PDF em base64 dentro de um JSON
-          const doJson = pdfDentroDeJson(r.corpo)
-          if (doJson) return doJson
-        }
-        if (r.status >= 500) {
-          foraDoAr = true
-          // página padrão do balanceador (HAProxy) quando a rota existe mas não há backend vivo
-          if (/No server is available/i.test(r.corpo)) semServidor = true
-          if (tentativa === 1) {
-            await new Promise((ok) => setTimeout(ok, 1200))
-            continue
-          }
-        }
-        break
-      }
-    }
-
-    const resumo = tentativas.join(' | ')
-    if (semServidor) {
-      throw new Error(
-        'O serviço nacional que gera o DANFSe (adn.nfse.gov.br/danfse) está sem nenhum servidor ativo — ' +
-          'o balanceador do governo responde "No server is available". É indisponibilidade do lado deles, ' +
-          `não do certificado nem desta aplicação. O XML da nota continua disponível aqui. Tentativas: ${resumo}`,
-      )
-    }
-    if (foraDoAr) {
-      throw new Error(
-        'O serviço nacional que gera o DANFSe respondeu erro 5xx neste momento. ' +
-          `O XML da nota continua disponível aqui. Tentativas: ${resumo}`,
-      )
-    }
-    throw new Error(`O ambiente nacional não devolveu o PDF desta NFS-e. Tentativas: ${resumo}`)
   }
 }
 
@@ -307,22 +237,4 @@ export function interpretarJson(corpo: string): Omit<RespostaDistribuicaoAdn, 's
     // registra o formato real recebido — chaves do topo e de um item do lote
     formatoRecebido: [...Object.keys(o), ...(itens[0] ? Object.keys(itens[0]).map((k) => `item:${k}`) : [])],
   }
-}
-
-/** Um PDF começa com "%PDF". */
-export const ehPdf = (bytes: Buffer): boolean => bytes.length > 4 && bytes.subarray(0, 4).toString('latin1') === '%PDF'
-
-/** Procura um PDF em base64 dentro de um JSON de resposta. */
-export function pdfDentroDeJson(corpo: string): Buffer | null {
-  try {
-    const o = JSON.parse(corpo) as Record<string, unknown>
-    for (const valor of Object.values(o)) {
-      if (typeof valor !== 'string' || valor.length < 100) continue
-      const bytes = Buffer.from(valor.replace(/\s/g, ''), 'base64')
-      if (ehPdf(bytes)) return bytes
-    }
-  } catch {
-    // não era JSON
-  }
-  return null
 }

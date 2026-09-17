@@ -9,6 +9,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
+import { gerarDanfse } from './danfse'
 import { logger } from 'firebase-functions'
 import { db, storage } from '../lib/admin'
 import { FISCAL_CRYPTO_KEY, FISCAL_MAX_EMPRESAS, REGIAO, SEFAZ_AMBIENTE } from '../lib/config'
@@ -556,31 +557,34 @@ export const sincronizarNfsePeriodico = onSchedule(
  * O ADN gera o documento auxiliar a partir do XML que ele já tem, então não guardamos o PDF:
  * ele é buscado na hora, com o certificado da empresa.
  */
-export const pdfNotaServico = onCall(
-  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
-  async (req) => {
-    const { id, email } = await exigirMembro(req.auth?.uid, req.data)
-    const { chaveAcesso } = (req.data ?? {}) as { chaveAcesso?: string }
-    if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
+export const pdfNotaServico = onCall({ region: REGIAO, timeoutSeconds: 60, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirMembro(req.auth?.uid, req.data)
+  const { chaveAcesso } = (req.data ?? {}) as { chaveAcesso?: string }
+  if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
 
-    // a nota precisa ser desta empresa: nada de baixar PDF de chave arbitrária
-    const snap = await notasServicoRef(id).doc(chaveAcesso).get()
-    if (!snap.exists) throw new HttpsError('not-found', 'Nota de serviço não encontrada nesta empresa')
+  // a nota precisa ser desta empresa: nada de gerar PDF de chave arbitrária
+  const snap = await notasServicoRef(id).doc(chaveAcesso).get()
+  if (!snap.exists) throw new HttpsError('not-found', 'Nota de serviço não encontrada nesta empresa')
+  const nota = snap.data() as { storagePath?: string; origem?: string; status?: string; situacao?: string }
+  if (nota.origem === 'municipal') {
+    throw new HttpsError('failed-precondition', 'Nota do sistema municipal: não tem DANFSe do padrão nacional. Baixe o XML.')
+  }
+  if (!nota.storagePath) throw new HttpsError('failed-precondition', 'O XML desta nota ainda não foi guardado.')
 
-    const credenciais = await resolverCredenciaisNfse(id, FISCAL_CRYPTO_KEY.value())
-    try {
-      const pdf = await credenciais.provider.danfse(chaveAcesso)
-      await auditar(id, 'xml_baixado', req.auth!.uid, { email, chaveAcesso, detalhe: 'PDF (DANFSe)' })
-      return { chaveAcesso, nomeArquivo: `${chaveAcesso}.pdf`, pdfBase64: pdf.toString('base64') }
-    } catch (e) {
-      const erro = (e as Error).message
-      logger.error('nfse: falha ao gerar o PDF', { empresaId: id, chaveAcesso, erro })
-      throw new HttpsError('internal', erro)
-    } finally {
-      credenciais.provider.encerrar()
-    }
-  },
-)
+  // A API nacional do DANFSe foi suspensa em 03/08/2026 (NT 008/2026): o PDF é gerado aqui,
+  // a partir do XML da própria nota, no leiaute que a NT fixa.
+  try {
+    const [xml] = await storage.bucket().file(nota.storagePath).download()
+    const marcaDagua = nota.status === 'cancelada' ? 'CANCELADA' : /substitu/i.test(nota.situacao ?? '') ? 'SUBSTITUÍDA' : undefined
+    const pdf = await gerarDanfse(xml.toString('utf8'), { marcaDagua })
+    await auditar(id, 'xml_baixado', req.auth!.uid, { email, chaveAcesso, detalhe: 'PDF (DANFSe)' })
+    return { chaveAcesso, nomeArquivo: `${chaveAcesso}.pdf`, pdfBase64: pdf.toString('base64') }
+  } catch (e) {
+    const erro = (e as Error).message
+    logger.error('nfse: falha ao gerar o DANFSe', { empresaId: id, chaveAcesso, erro })
+    throw new HttpsError('internal', `Não foi possível gerar o DANFSe: ${erro}`)
+  }
+})
 
 /**
  * Lê o Swagger oficial das APIs nacionais usando o certificado da empresa.
