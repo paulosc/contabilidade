@@ -54,7 +54,12 @@ export function lerArquivoBase64(arquivo: File): Promise<string> {
 }
 
 /** Chave de acesso em blocos de 4, como aparece no DANFE. */
-export const formatarChave = (chave: string): string => (chave ?? '').replace(/(.{4})/g, '$1 ').trim()
+export const formatarChave = (chave: string): string => {
+  const c = (chave ?? '').trim()
+  // só a chave de acesso é agrupada de 4 em 4: 44 dígitos na NF-e, 50 na NFS-e nacional.
+  // A nota municipal não tem chave nacional — o id dela não é número e sairia picotado.
+  return /^\d{40,}$/.test(c) ? c.replace(/(.{4})/g, '$1 ').trim() : c
+}
 
 /** NSU sem os zeros à esquerda (o leiaute usa 15 posições, mas na tela isso só atrapalha). */
 export const nsuLegivel = (nsu?: string): string => {

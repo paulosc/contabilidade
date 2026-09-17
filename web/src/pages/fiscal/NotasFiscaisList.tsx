@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { limit, orderBy } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { Download, Eraser, FileText, Receipt, RefreshCw, Settings, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, Eraser, Receipt, RefreshCw, Settings } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner } from '../../components/ui'
@@ -32,10 +32,105 @@ const TETO_LISTAGEM = 500
 const inicioDoDia = (iso: string) => new Date(`${iso}T00:00:00`)
 const fimDoDia = (iso: string) => new Date(`${iso}T23:59:59`)
 
+
+/** Detalhe da NF-e, aberto dentro da própria linha da tabela. */
+function DetalheNota({
+  nota,
+  ocupado,
+  aoBaixarXml,
+}: {
+  nota: ComId<NotaFiscal>
+  ocupado: string | null
+  aoBaixarXml: (n: ComId<NotaFiscal>, caminho?: string) => void
+}) {
+  return (
+    <div className="border-l-2 border-indigo-400 bg-slate-50/70 px-4 py-4">
+      <p className="mb-3 font-mono text-xs break-all text-slate-500">{formatarChave(nota.chaveAcesso)}</p>
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <div><dt className="text-xs text-slate-500 uppercase">Emitente</dt><dd className="font-medium">{nota.razaoSocialEmitente ?? '—'}</dd><dd className="text-xs text-slate-500">{nota.cnpjEmitente ? formatCpfCnpj(nota.cnpjEmitente) : ''}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">Destinatário</dt><dd className="font-medium">{nota.razaoSocialDestinatario ?? '—'}</dd><dd className="text-xs text-slate-500">{nota.cnpjDestinatario ? formatCpfCnpj(nota.cnpjDestinatario) : ''}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">Emissão</dt><dd>{formatData(nota.dataEmissao)}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">Valor</dt><dd className="font-medium">{formatBRL(nota.valorTotal)}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">Protocolo</dt><dd className="font-mono text-xs">{nota.protocolo ?? '—'}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">NSU</dt><dd className="font-mono text-xs">{nsuLegivel(nota.nsu)}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">Natureza</dt><dd>{nota.naturezaOperacao ?? '—'}</dd></div>
+          <div><dt className="text-xs text-slate-500 uppercase">Importada em</dt><dd>{formatData(nota.importadoEm)}</dd></div>
+        </dl>
+
+        {nota.produtos?.length ? (
+          <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs font-medium tracking-wide text-slate-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2">Código</th>
+                  <th className="px-3 py-2">Descrição</th>
+                  <th className="px-3 py-2">NCM</th>
+                  <th className="px-3 py-2">CFOP</th>
+                  <th className="px-3 py-2">Un.</th>
+                  <th className="px-3 py-2 text-right">Qtd.</th>
+                  <th className="px-3 py-2 text-right">Vl. unit.</th>
+                  <th className="px-3 py-2 text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {nota.produtos.map((p, i) => (
+                  <tr key={`${p.codigo ?? i}-${i}`}>
+                    <td className="px-3 py-2 font-mono text-xs">{p.codigo ?? '—'}</td>
+                    <td className="px-3 py-2">{p.descricao}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{p.ncm ?? '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{p.cfop ?? '—'}</td>
+                    <td className="px-3 py-2">{p.unidade ?? '—'}</td>
+                    <td className="px-3 py-2 text-right">{p.quantidade ?? '—'}</td>
+                    <td className="px-3 py-2 text-right">{formatBRL(p.valorUnitario)}</td>
+                    <td className="px-3 py-2 text-right">{formatBRL(p.valorTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-slate-500">
+            {nota.xmlCompleto
+              ? 'Esta nota não trouxe itens.'
+              : 'Só o resumo desta nota foi disponibilizado pela SEFAZ. O XML completo é liberado após a manifestação do destinatário.'}
+          </p>
+        )}
+
+        {nota.eventos?.length ? (
+          <div className="mt-4">
+            <p className="mb-2 text-sm font-medium text-slate-800">Eventos</p>
+            <ul className="space-y-1 text-sm text-slate-600">
+              {nota.eventos.map((e) => (
+                <li key={`${e.tpEvento}-${e.nSeqEvento}`} className="flex flex-wrap items-center gap-2">
+                  <Badge tom="azul">{e.tpEvento}</Badge>
+                  <span>{e.descricao}</span>
+                  <span className="text-xs text-slate-500">{formatData(e.dataEvento)}</span>
+                  {e.storagePath && (
+                    <button onClick={() => aoBaixarXml(nota, e.storagePath)} className="text-xs text-indigo-600 hover:underline">
+                      baixar XML
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {nota.storagePath && (
+          <div className="mt-4">
+            <Botao tamanho="sm" variante="secundario" carregando={ocupado === `xml-${nota.id}`} onClick={() => aoBaixarXml(nota)}>
+              <Download className="h-3.5 w-3.5" /> Baixar XML
+            </Botao>
+          </div>
+        )}
+    </div>
+  )
+}
+
 export function NotasFiscaisList() {
   const { dados, carregando, erro } = useColecao<NotaFiscal>('notasFiscais', [orderBy('dataEmissao', 'desc'), limit(TETO_LISTAGEM)])
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
-  const [selecionada, setSelecionada] = useState<ComId<NotaFiscal> | null>(null)
+  const [expandida, setExpandida] = useState<string | null>(null)
   const [pagina, setPagina] = useState(1)
   const [porPagina, setPorPagina] = useState(50)
   const [ocupado, setOcupado] = useState<string | null>(null)
@@ -223,99 +318,6 @@ export function NotasFiscaisList() {
         </div>
       </Card>
 
-      {selecionada && (
-        <Card className="mb-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">
-                NF-e {selecionada.numero ?? '—'} · série {selecionada.serie ?? '—'}
-              </h2>
-              <p className="font-mono text-xs break-all text-slate-500">{formatarChave(selecionada.chaveAcesso)}</p>
-            </div>
-            <button onClick={() => setSelecionada(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Fechar detalhe">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <div><dt className="text-xs text-slate-500 uppercase">Emitente</dt><dd className="font-medium">{selecionada.razaoSocialEmitente ?? '—'}</dd><dd className="text-xs text-slate-500">{selecionada.cnpjEmitente ? formatCpfCnpj(selecionada.cnpjEmitente) : ''}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Destinatário</dt><dd className="font-medium">{selecionada.razaoSocialDestinatario ?? '—'}</dd><dd className="text-xs text-slate-500">{selecionada.cnpjDestinatario ? formatCpfCnpj(selecionada.cnpjDestinatario) : ''}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Emissão</dt><dd>{formatData(selecionada.dataEmissao)}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Valor</dt><dd className="font-medium">{formatBRL(selecionada.valorTotal)}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Protocolo</dt><dd className="font-mono text-xs">{selecionada.protocolo ?? '—'}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">NSU</dt><dd className="font-mono text-xs">{nsuLegivel(selecionada.nsu)}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Natureza</dt><dd>{selecionada.naturezaOperacao ?? '—'}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Importada em</dt><dd>{formatData(selecionada.importadoEm)}</dd></div>
-          </dl>
-
-          {selecionada.produtos?.length ? (
-            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-medium tracking-wide text-slate-500 uppercase">
-                  <tr>
-                    <th className="px-3 py-2">Código</th>
-                    <th className="px-3 py-2">Descrição</th>
-                    <th className="px-3 py-2">NCM</th>
-                    <th className="px-3 py-2">CFOP</th>
-                    <th className="px-3 py-2">Un.</th>
-                    <th className="px-3 py-2 text-right">Qtd.</th>
-                    <th className="px-3 py-2 text-right">Vl. unit.</th>
-                    <th className="px-3 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selecionada.produtos.map((p, i) => (
-                    <tr key={`${p.codigo ?? i}-${i}`}>
-                      <td className="px-3 py-2 font-mono text-xs">{p.codigo ?? '—'}</td>
-                      <td className="px-3 py-2">{p.descricao}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{p.ncm ?? '—'}</td>
-                      <td className="px-3 py-2 font-mono text-xs">{p.cfop ?? '—'}</td>
-                      <td className="px-3 py-2">{p.unidade ?? '—'}</td>
-                      <td className="px-3 py-2 text-right">{p.quantidade ?? '—'}</td>
-                      <td className="px-3 py-2 text-right">{formatBRL(p.valorUnitario)}</td>
-                      <td className="px-3 py-2 text-right">{formatBRL(p.valorTotal)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-slate-500">
-              {selecionada.xmlCompleto
-                ? 'Esta nota não trouxe itens.'
-                : 'Só o resumo desta nota foi disponibilizado pela SEFAZ. O XML completo é liberado após a manifestação do destinatário.'}
-            </p>
-          )}
-
-          {selecionada.eventos?.length ? (
-            <div className="mt-4">
-              <p className="mb-2 text-sm font-medium text-slate-800">Eventos</p>
-              <ul className="space-y-1 text-sm text-slate-600">
-                {selecionada.eventos.map((e) => (
-                  <li key={`${e.tpEvento}-${e.nSeqEvento}`} className="flex flex-wrap items-center gap-2">
-                    <Badge tom="azul">{e.tpEvento}</Badge>
-                    <span>{e.descricao}</span>
-                    <span className="text-xs text-slate-500">{formatData(e.dataEvento)}</span>
-                    {e.storagePath && (
-                      <button onClick={() => void baixarXml(selecionada, e.storagePath)} className="text-xs text-indigo-600 hover:underline">
-                        baixar XML
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {selecionada.storagePath && (
-            <div className="mt-4">
-              <Botao tamanho="sm" variante="secundario" carregando={ocupado === `xml-${selecionada.id}`} onClick={() => void baixarXml(selecionada)}>
-                <Download className="h-3.5 w-3.5" /> Baixar XML
-              </Botao>
-            </div>
-          )}
-        </Card>
-      )}
-
       {carregando ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : dados.length === 0 ? (
@@ -346,42 +348,53 @@ export function NotasFiscaisList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {daPagina.map((n) => (
-                <tr key={n.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setSelecionada(n)}>
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    {n.numero ?? '—'}
-                    <span className="text-slate-400"> / {n.serie ?? '—'}</span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">{n.razaoSocialEmitente ?? '—'}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{n.cnpjEmitente ? formatCpfCnpj(n.cnpjEmitente) : '—'}</td>
-                  <td className="px-4 py-3 text-slate-600">{formatData(n.dataEmissao)}</td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">{formatBRL(n.valorTotal)}</td>
-                  <td className="px-4 py-3">
-                    <Badge tom={TOM_STATUS[n.status]}>{STATUS_NOTA_FISCAL[n.status]}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelecionada(n) }}
-                        className="rounded-lg p-1.5 text-indigo-600 hover:bg-indigo-50"
-                        title="Ver detalhes"
-                      >
-                        <FileText className="h-4 w-4" />
-                      </button>
-                      {n.storagePath && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); void baixarXml(n) }}
-                          disabled={ocupado === `xml-${n.id}`}
-                          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-                          title="Baixar XML"
-                        >
-                          <Download className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {daPagina.map((n) => {
+                const aberta = expandida === n.id
+                return (
+                  <Fragment key={n.id}>
+                    <tr
+                      className={`cursor-pointer ${aberta ? 'bg-indigo-50/60' : 'hover:bg-slate-50'}`}
+                      onClick={() => setExpandida(aberta ? null : n.id)}
+                    >
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {n.numero ?? '—'}
+                        <span className="text-slate-400"> / {n.serie ?? '—'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{n.razaoSocialEmitente ?? '—'}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600">{n.cnpjEmitente ? formatCpfCnpj(n.cnpjEmitente) : '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatData(n.dataEmissao)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">{formatBRL(n.valorTotal)}</td>
+                      <td className="px-4 py-3">
+                        <Badge tom={TOM_STATUS[n.status]}>{STATUS_NOTA_FISCAL[n.status]}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          {n.storagePath && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void baixarXml(n) }}
+                              disabled={ocupado === `xml-${n.id}`}
+                              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                              title="Baixar XML"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          )}
+                          <span className="rounded-lg p-1.5 text-slate-400" title={aberta ? 'Fechar detalhes' : 'Ver detalhes'} aria-hidden>
+                            {aberta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                    {aberta && (
+                      <tr>
+                        <td colSpan={7} className="p-0">
+                          <DetalheNota nota={n} ocupado={ocupado} aoBaixarXml={(x, caminho) => void baixarXml(x, caminho)} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
             </tbody>
           </table>
           <Paginacao

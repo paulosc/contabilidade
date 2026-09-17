@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { limit, orderBy } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { Download, Eraser, FileDown, FileText, Receipt, RefreshCw, Settings, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Download, Eraser, FileDown, Receipt, RefreshCw, Settings } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner } from '../../components/ui'
@@ -25,10 +25,130 @@ const TETO_LISTAGEM = 500
 const inicioDoDia = (iso: string) => new Date(`${iso}T00:00:00`)
 const fimDoDia = (iso: string) => new Date(`${iso}T23:59:59`)
 
+
+/** Detalhe da nota, aberto dentro da própria linha da tabela. */
+function DetalheNota({
+  nota,
+  ocupado,
+  aoBaixarPdf,
+  aoBaixarXml,
+}: {
+  nota: ComId<NotaServico>
+  ocupado: string | null
+  aoBaixarPdf: (n: ComId<NotaServico>) => void
+  aoBaixarXml: (n: ComId<NotaServico>, caminho?: string) => void
+}) {
+  return (
+    <div className="border-l-2 border-indigo-400 bg-slate-50/70 px-4 py-4">
+      {nota.origem === 'municipal' ? (
+        <p className="mb-3 text-xs text-slate-500">
+          Nota do sistema municipal, sem chave de acesso nacional
+          {nota.codigoVerificacao ? ` · código de verificação ${nota.codigoVerificacao}` : ''}
+        </p>
+      ) : (
+        <p className="mb-3 font-mono text-xs break-all text-slate-500">{formatarChave(nota.chaveAcesso)}</p>
+      )}
+
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Prestador</dt>
+          <dd className="font-medium">{nota.razaoSocialPrestador ?? '—'}</dd>
+          <dd className="text-xs text-slate-500">{nota.cnpjPrestador ? formatCpfCnpj(nota.cnpjPrestador) : ''}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Tomador</dt>
+          <dd className="font-medium">{nota.razaoSocialTomador ?? '—'}</dd>
+          <dd className="text-xs text-slate-500">{nota.cnpjTomador ? formatCpfCnpj(nota.cnpjTomador) : ''}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Emissão</dt>
+          <dd>{formatData(nota.dataEmissao)}</dd>
+          <dd className="text-xs text-slate-500">competência {nota.competencia ?? '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Município</dt>
+          <dd>{nota.municipioPrestacao ?? nota.municipioEmissao ?? (nota.codigoMunicipio ? `IBGE ${nota.codigoMunicipio}` : '—')}</dd>
+          {nota.numeroDps && (
+            <dd className="text-xs text-slate-500">
+              DPS {nota.numeroDps}
+              {nota.serieDps ? `/${nota.serieDps}` : ''}
+            </dd>
+          )}
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Valor do serviço</dt>
+          <dd className="font-medium">{formatBRL(nota.valorServico)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Base / alíquota</dt>
+          <dd>
+            {formatBRL(nota.baseCalculo)}
+            {nota.aliquota != null ? ` · ${nota.aliquota}%` : ''}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">ISSQN</dt>
+          <dd>{formatBRL(nota.valorIss)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Valor líquido</dt>
+          <dd className="font-medium">{formatBRL(nota.valorLiquido)}</dd>
+        </div>
+      </dl>
+
+      {nota.descricaoServico && (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+          <p className="text-xs text-slate-500 uppercase">Descrição do serviço</p>
+          <p className="mt-1 text-sm whitespace-pre-line text-slate-800">{nota.descricaoServico}</p>
+          {nota.codigoTributacaoNacional && (
+            <p className="mt-2 text-xs text-slate-500">
+              {nota.origem === 'municipal' ? 'Item da lista de serviço' : 'Código de tributação nacional'}:{' '}
+              {nota.codigoTributacaoNacional}
+            </p>
+          )}
+        </div>
+      )}
+
+      {nota.eventos?.length ? (
+        <div className="mt-4">
+          <p className="mb-2 text-sm font-medium text-slate-800">Eventos</p>
+          <ul className="space-y-1 text-sm text-slate-600">
+            {nota.eventos.map((e) => (
+              <li key={`${e.tipoEvento}-${e.numeroSequencial}`} className="flex flex-wrap items-center gap-2">
+                <Badge tom="azul">{e.tipoEvento}</Badge>
+                <span>{e.descricao}</span>
+                <span className="text-xs text-slate-500">{formatData(e.dataEvento)}</span>
+                {e.storagePath && (
+                  <button onClick={() => aoBaixarXml(nota, e.storagePath)} className="text-xs text-indigo-600 hover:underline">
+                    baixar XML
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {nota.origem !== 'municipal' && (
+          <Botao tamanho="sm" carregando={ocupado === `pdf-${nota.id}`} onClick={() => aoBaixarPdf(nota)}>
+            <FileDown className="h-3.5 w-3.5" /> Baixar PDF (DANFSe)
+          </Botao>
+        )}
+        {nota.storagePath && (
+          <Botao tamanho="sm" variante="secundario" carregando={ocupado === `xml-${nota.id}`} onClick={() => aoBaixarXml(nota)}>
+            <Download className="h-3.5 w-3.5" /> Baixar XML
+          </Botao>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function NotasServicoList() {
   const { dados, carregando, erro } = useColecao<NotaServico>('notasServico', [orderBy('dataEmissao', 'desc'), limit(TETO_LISTAGEM)])
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
-  const [selecionada, setSelecionada] = useState<ComId<NotaServico> | null>(null)
+  const [expandida, setExpandida] = useState<string | null>(null)
   const [papel, setPapel] = useState('')
   const [pagina, setPagina] = useState(1)
   const [porPagina, setPorPagina] = useState(50)
@@ -247,74 +367,6 @@ export function NotasServicoList() {
         </div>
       </Card>
 
-      {selecionada && (
-        <Card className="mb-4">
-          <div className="mb-3 flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">
-                NFS-e {selecionada.numero ?? '—'}
-                {selecionada.numeroDps ? ` · DPS ${selecionada.numeroDps}/${selecionada.serieDps ?? ''}` : ''}
-              </h2>
-              <p className="font-mono text-xs break-all text-slate-500">{formatarChave(selecionada.chaveAcesso)}</p>
-            </div>
-            <button onClick={() => setSelecionada(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100" aria-label="Fechar detalhe">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <div><dt className="text-xs text-slate-500 uppercase">Prestador</dt><dd className="font-medium">{selecionada.razaoSocialPrestador ?? '—'}</dd><dd className="text-xs text-slate-500">{selecionada.cnpjPrestador ? formatCpfCnpj(selecionada.cnpjPrestador) : ''}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Tomador</dt><dd className="font-medium">{selecionada.razaoSocialTomador ?? '—'}</dd><dd className="text-xs text-slate-500">{selecionada.cnpjTomador ? formatCpfCnpj(selecionada.cnpjTomador) : ''}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Emissão</dt><dd>{formatData(selecionada.dataEmissao)}</dd><dd className="text-xs text-slate-500">competência {selecionada.competencia ?? '—'}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Município</dt><dd>{selecionada.municipioPrestacao ?? selecionada.municipioEmissao ?? '—'}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Valor do serviço</dt><dd className="font-medium">{formatBRL(selecionada.valorServico)}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Base / alíquota</dt><dd>{formatBRL(selecionada.baseCalculo)}{selecionada.aliquota != null ? ` · ${selecionada.aliquota}%` : ''}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">ISSQN</dt><dd>{formatBRL(selecionada.valorIss)}</dd></div>
-            <div><dt className="text-xs text-slate-500 uppercase">Valor líquido</dt><dd className="font-medium">{formatBRL(selecionada.valorLiquido)}</dd></div>
-          </dl>
-
-          {selecionada.descricaoServico && (
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <p className="text-xs text-slate-500 uppercase">Descrição do serviço</p>
-              <p className="mt-1 text-sm whitespace-pre-line text-slate-800">{selecionada.descricaoServico}</p>
-              {selecionada.codigoTributacaoNacional && (
-                <p className="mt-2 text-xs text-slate-500">Código de tributação nacional: {selecionada.codigoTributacaoNacional}</p>
-              )}
-            </div>
-          )}
-
-          {selecionada.eventos?.length ? (
-            <div className="mt-4">
-              <p className="mb-2 text-sm font-medium text-slate-800">Eventos</p>
-              <ul className="space-y-1 text-sm text-slate-600">
-                {selecionada.eventos.map((e) => (
-                  <li key={`${e.tipoEvento}-${e.numeroSequencial}`} className="flex flex-wrap items-center gap-2">
-                    <Badge tom="azul">{e.tipoEvento}</Badge>
-                    <span>{e.descricao}</span>
-                    <span className="text-xs text-slate-500">{formatData(e.dataEvento)}</span>
-                    {e.storagePath && (
-                      <button onClick={() => void baixarXml(selecionada, e.storagePath)} className="text-xs text-indigo-600 hover:underline">
-                        baixar XML
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Botao tamanho="sm" carregando={ocupado === `pdf-${selecionada.id}`} onClick={() => void baixarPdf(selecionada)}>
-              <FileDown className="h-3.5 w-3.5" /> Baixar PDF (DANFSe)
-            </Botao>
-            {selecionada.storagePath && (
-              <Botao tamanho="sm" variante="secundario" carregando={ocupado === `xml-${selecionada.id}`} onClick={() => void baixarXml(selecionada)}>
-                <Download className="h-3.5 w-3.5" /> Baixar XML
-              </Botao>
-            )}
-          </div>
-        </Card>
-      )}
-
       {carregando ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : dados.length === 0 ? (
@@ -345,58 +397,80 @@ export function NotasServicoList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {daPagina.map((n) => (
-                <tr key={n.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setSelecionada(n)}>
-                  <td className="px-4 py-3 font-medium text-slate-900">
-                    {n.numero ?? '—'}
-                    {n.origem === 'municipal' && (
-                      <span className="mt-0.5 block text-[10px] font-normal text-slate-400">sistema municipal</span>
+              {daPagina.map((n) => {
+                const aberta = expandida === n.id
+                return (
+                  <Fragment key={n.id}>
+                    <tr
+                      className={`cursor-pointer ${aberta ? 'bg-indigo-50/60' : 'hover:bg-slate-50'}`}
+                      onClick={() => setExpandida(aberta ? null : n.id)}
+                    >
+                      <td className="px-4 py-3 font-medium text-slate-900">
+                        {n.numero ?? '—'}
+                        {n.origem === 'municipal' && (
+                          <span className="mt-0.5 block text-[10px] font-normal text-slate-400">sistema municipal</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tom={n.papel === 'prestador' ? 'verde' : n.papel === 'tomador' ? 'azul' : 'neutro'}>
+                          {n.papel === 'prestador' ? 'Emitida' : n.papel === 'tomador' ? 'Recebida' : 'Outro'}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {n.papel === 'prestador' ? (n.razaoSocialTomador ?? '—') : (n.razaoSocialPrestador ?? '—')}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{formatData(n.dataEmissao)}</td>
+                      <td className="px-4 py-3 text-right whitespace-nowrap">{formatBRL(n.valorServico)}</td>
+                      <td className="px-4 py-3">
+                        <Badge tom={n.status === 'cancelada' ? 'vermelho' : 'verde'}>{STATUS_NOTA_SERVICO[n.status]}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          {n.origem !== 'municipal' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void baixarPdf(n) }}
+                              disabled={ocupado === `pdf-${n.id}`}
+                              className="rounded-lg p-1.5 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                              title="Baixar PDF (DANFSe)"
+                            >
+                              <FileDown className="h-4 w-4" />
+                            </button>
+                          )}
+                          {n.storagePath && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void baixarXml(n) }}
+                              disabled={ocupado === `xml-${n.id}`}
+                              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                              title="Baixar XML"
+                            >
+                              <Download className="h-4 w-4" />
+                            </button>
+                          )}
+                          <span
+                            className="rounded-lg p-1.5 text-slate-400"
+                            title={aberta ? 'Fechar detalhes' : 'Ver detalhes'}
+                            aria-hidden
+                          >
+                            {aberta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                    {aberta && (
+                      <tr>
+                        <td colSpan={7} className="p-0">
+                          <DetalheNota
+                            nota={n}
+                            ocupado={ocupado}
+                            aoBaixarPdf={(x) => void baixarPdf(x)}
+                            aoBaixarXml={(x, caminho) => void baixarXml(x, caminho)}
+                          />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tom={n.papel === 'prestador' ? 'verde' : n.papel === 'tomador' ? 'azul' : 'neutro'}>
-                      {n.papel === 'prestador' ? 'Emitida' : n.papel === 'tomador' ? 'Recebida' : 'Outro'}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">
-                    {n.papel === 'prestador' ? (n.razaoSocialTomador ?? '—') : (n.razaoSocialPrestador ?? '—')}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{formatData(n.dataEmissao)}</td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap">{formatBRL(n.valorServico)}</td>
-                  <td className="px-4 py-3">
-                    <Badge tom={n.status === 'cancelada' ? 'vermelho' : 'verde'}>{STATUS_NOTA_SERVICO[n.status]}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelecionada(n) }}
-                        className="rounded-lg p-1.5 text-indigo-600 hover:bg-indigo-50"
-                        title="Ver detalhes"
-                      >
-                        <FileText className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); void baixarPdf(n) }}
-                        disabled={ocupado === `pdf-${n.id}`}
-                        className="rounded-lg p-1.5 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                        title="Baixar PDF (DANFSe)"
-                      >
-                        <FileDown className="h-4 w-4" />
-                      </button>
-                      {n.storagePath && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); void baixarXml(n) }}
-                          disabled={ocupado === `xml-${n.id}`}
-                          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-                          title="Baixar XML"
-                        >
-                          <Download className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                  </Fragment>
+                )
+              })}
             </tbody>
           </table>
           <Paginacao
