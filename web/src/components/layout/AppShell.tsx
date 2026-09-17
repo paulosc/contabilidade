@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutDashboard, LogOut, Menu, ScanLine, Settings, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
+import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
 import { PAPEIS } from '../../types'
 import { IconeMarca } from '../Marca'
@@ -13,7 +14,7 @@ const itens = [
 ]
 
 export function AppShell() {
-  const { empresa, membro, user, sair } = useAuth()
+  const { empresa, membro, user, sair, erroEmpresa } = useAuth()
   const [aberto, setAberto] = useState(false)
 
   const nav = (
@@ -103,6 +104,18 @@ export function AppShell() {
         </header>
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <div className="mx-auto max-w-6xl">
+            {/* sem a empresa carregada nenhuma listagem funciona: melhor dizer o porquê */}
+            {erroEmpresa && (
+              <div className="mb-4">
+                <Alerta tipo="erro">
+                  {erroEmpresa === 'nao-encontrada'
+                    ? 'Seu usuário aponta para uma empresa que não existe mais no banco. Saia e entre de novo para cadastrar a empresa.'
+                    : erroEmpresa === 'sem-permissao'
+                      ? 'Sem permissão para ler os dados desta empresa. Confira se o seu usuário ainda consta como membro dela.'
+                      : 'Não foi possível carregar os dados da empresa. Verifique a conexão e recarregue a página.'}
+                </Alerta>
+              </div>
+            )}
             <Outlet />
           </div>
         </main>

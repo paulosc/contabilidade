@@ -43,7 +43,13 @@ function useQueryTempoReal<T>(
   const [erro, setErro] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!empresa) return
+    // sem empresa carregada não há o que assinar — e deixar `carregando` ligado
+    // faria a tela girar para sempre em vez de mostrar o estado vazio
+    if (!empresa) {
+      setDados([])
+      setCarregando(false)
+      return
+    }
     setCarregando(true)
     const q = query(montar(empresa.id), ...constraints)
     return onSnapshot(

@@ -32,6 +32,8 @@ interface AuthContextValue {
   perfil: Usuario | null
   empresa: ComId<Empresa> | null
   membro: Membro | null
+  /** Por que a empresa não carregou, quando o usuário tem empresaId mas o documento não veio. */
+  erroEmpresa: 'nao-encontrada' | 'sem-permissao' | 'falha' | null
   carregando: boolean
   entrar(email: string, senha: string): Promise<void>
   entrarComProvedor(provedor: ProvedorSocial): Promise<void>
@@ -46,6 +48,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [authPronto, setAuthPronto] = useState(false)
+  const [erroEmpresa, setErroEmpresa] = useState<AuthContextValue['erroEmpresa']>(null)
 
   // Perfil carregado e para qual uid ele vale (evita usar dado de outro usuário / estado antigo)
   const [perfilEstado, setPerfilEstado] = useState<{ uid: string | null; perfil: Usuario | null }>({ uid: null, perfil: null })
@@ -84,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user || !empresaId) {
       setTenantEstado({ id: null, empresa: null, membro: null })
+      setErroEmpresa(null)
       return
     }
     const id = empresaId
@@ -96,10 +100,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       doc(db, 'empresas', id),
       (snap) => {
         emp = snap.exists() ? { id: snap.id, ...(snap.data() as Empresa) } : null
+        setErroEmpresa(snap.exists() ? null : 'nao-encontrada')
         publicar()
       },
-      () => {
+      (err) => {
         emp = null
+        setErroEmpresa(err.code === 'permission-denied' ? 'sem-permissao' : 'falha')
         publicar()
       },
     )
@@ -150,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     perfil,
     empresa,
     membro,
+    erroEmpresa: empresa ? null : erroEmpresa,
     carregando,
 
     async entrar(email, senha) {
