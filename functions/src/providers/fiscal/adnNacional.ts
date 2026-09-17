@@ -17,7 +17,6 @@ import { gunzipSync, inflateSync, unzipSync } from 'node:zlib'
 import {
   ADN_URLS,
   DANFSE_URLS,
-  SEFIN_URLS,
   type AdnContribuintesProvider,
   type CredenciaisAdn,
   type DocumentoServicoDistribuido,
@@ -162,16 +161,17 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     const chave = (chaveAcesso ?? '').replace(/\D/g, '')
     if (chave.length !== 50) throw new Error('Chave de acesso da NFS-e deve ter 50 dígitos')
 
-    // As duas bases oficiais que servem o DANFSe, nas duas formas de caminho que a documentação
-    // deixa ambíguas. A primeira que devolver um PDF vence — e o log diz qual foi.
+    // Só o módulo danfse do ADN serve o PDF. O /DANFSe do SEFIN responde 501 "este serviço foi
+    // movido" (está assim no próprio Swagger dele), então não vale a pena bater lá. A documentação
+    // deixa ambíguo se o segmento /danfse se repete no caminho; tentamos as duas formas.
     const candidatos = [
       { base: DANFSE_URLS[this.cfg.ambiente], caminho: `/${chave}` },
       { base: DANFSE_URLS[this.cfg.ambiente], caminho: `/danfse/${chave}` },
-      { base: SEFIN_URLS[this.cfg.ambiente], caminho: `/danfse/${chave}` },
     ]
 
     const tentativas: string[] = []
     let foraDoAr = false
+    let semServidor = false
 
     for (const { base, caminho } of candidatos) {
       // 5xx costuma ser instabilidade momentânea do ambiente nacional, não caminho errado
@@ -191,6 +191,8 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
         }
         if (r.status >= 500) {
           foraDoAr = true
+          // página padrão do balanceador (HAProxy) quando a rota existe mas não há backend vivo
+          if (/No server is available/i.test(r.corpo)) semServidor = true
           if (tentativa === 1) {
             await new Promise((ok) => setTimeout(ok, 1200))
             continue
@@ -201,9 +203,16 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     }
 
     const resumo = tentativas.join(' | ')
+    if (semServidor) {
+      throw new Error(
+        'O serviço nacional que gera o DANFSe (adn.nfse.gov.br/danfse) está sem nenhum servidor ativo — ' +
+          'o balanceador do governo responde "No server is available". É indisponibilidade do lado deles, ' +
+          `não do certificado nem desta aplicação. O XML da nota continua disponível aqui. Tentativas: ${resumo}`,
+      )
+    }
     if (foraDoAr) {
       throw new Error(
-        'O serviço nacional que gera o DANFSe está fora do ar neste momento (HTTP 5xx). ' +
+        'O serviço nacional que gera o DANFSe respondeu erro 5xx neste momento. ' +
           `O XML da nota continua disponível aqui. Tentativas: ${resumo}`,
       )
     }
