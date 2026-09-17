@@ -28,6 +28,16 @@ export const ADN_URLS = {
   homologacao: 'https://adn.producaorestrita.nfse.gov.br/contribuintes',
 } as const
 
+/**
+ * API DANFSe: gera o PDF da NFS-e a partir da chave de acesso.
+ * Manual de Municípios — APIs do ADN, item 1.5: "GET /danfse/{chaveAcesso} — Recupera o DANFSe
+ * de uma NFS-e a partir de sua chave de acesso."
+ */
+export const DANFSE_URLS = {
+  producao: 'https://adn.nfse.gov.br/danfse',
+  homologacao: 'https://adn.producaorestrita.nfse.gov.br/danfse',
+} as const
+
 export interface CredenciaisAdn {
   /** CNPJ (14) ou CPF (11) do interessado, só dígitos */
   documento: string
@@ -73,6 +83,8 @@ export interface AdnContribuintesProvider {
   distribuirPorNsu(ultimoNSU: string): Promise<RespostaDistribuicaoAdn>
   /** GET /NFSe/{chaveAcesso}/Eventos — eventos vinculados a uma NFS-e. */
   eventosDaChave(chaveAcesso: string): Promise<RespostaDistribuicaoAdn>
+  /** GET /danfse/{chaveAcesso} — PDF do documento auxiliar (DANFSe). */
+  danfse(chaveAcesso: string): Promise<Buffer>
   encerrar(): void
 }
 

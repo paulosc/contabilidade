@@ -23,5 +23,6 @@ export {
   ativarNfse,
   sincronizarNfseAgora,
   xmlNotaServico,
+  pdfNotaServico,
   sincronizarNfsePeriodico,
 } from './fiscal'

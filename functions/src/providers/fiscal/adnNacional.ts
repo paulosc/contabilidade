@@ -16,6 +16,7 @@ import { Agent, request as httpsRequest } from 'node:https'
 import { gunzipSync, inflateSync, unzipSync } from 'node:zlib'
 import {
   ADN_URLS,
+  DANFSE_URLS,
   type AdnContribuintesProvider,
   type CredenciaisAdn,
   type DocumentoServicoDistribuido,
@@ -33,6 +34,7 @@ export const nsuAdn = (valor: string | number): string => {
 interface RespostaHttp {
   status: number
   corpo: string
+  bytes?: Buffer
 }
 
 export class AdnNacionalProvider implements AdnContribuintesProvider {
@@ -65,8 +67,8 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     return this.cfg.endpoint || ADN_URLS[this.cfg.ambiente]
   }
 
-  private http(caminho: string): Promise<RespostaHttp> {
-    const url = new URL(this.base + caminho)
+  private http(caminho: string, base?: string): Promise<RespostaHttp> {
+    const url = new URL((base ?? this.base) + caminho)
     return new Promise((resolve, reject) => {
       const req = httpsRequest(
         {
@@ -94,7 +96,7 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
             } catch {
               // veio sem compactação apesar do cabeçalho
             }
-            resolve({ status: res.statusCode ?? 0, corpo: bruto.toString('utf8') })
+            resolve({ status: res.statusCode ?? 0, corpo: bruto.toString('utf8'), bytes: bruto })
           })
         },
       )
@@ -133,6 +135,27 @@ export class AdnNacionalProvider implements AdnContribuintesProvider {
     const chave = (chaveAcesso ?? '').replace(/\D/g, '')
     if (chave.length !== 50) return Promise.reject(new Error('Chave de acesso da NFS-e deve ter 50 dígitos'))
     return this.chamar(`/NFSe/${chave}/Eventos`)
+  }
+
+  /** PDF do DANFSe. O ADN gera o documento auxiliar a partir do XML que ele já tem. */
+  async danfse(chaveAcesso: string): Promise<Buffer> {
+    const chave = (chaveAcesso ?? '').replace(/\D/g, '')
+    if (chave.length !== 50) throw new Error('Chave de acesso da NFS-e deve ter 50 dígitos')
+    const base = DANFSE_URLS[this.cfg.ambiente]
+    const r = await this.http(`/${chave}`, base)
+    if (r.status === 403) {
+      throw new Error('O ADN recusou a conexão (HTTP 403) ao gerar o PDF: confira o certificado digital.')
+    }
+    if (r.status === 404) throw new Error('O ADN não encontrou esta NFS-e para gerar o PDF.')
+    if (r.status < 200 || r.status >= 300) throw new Error(`ADN respondeu HTTP ${r.status} ao gerar o PDF`)
+    const bytes = r.bytes ?? Buffer.from(r.corpo, 'utf8')
+    if (!ehPdf(bytes)) {
+      // algumas respostas trazem o PDF em base64 dentro de um JSON
+      const doJson = pdfDentroDeJson(r.corpo)
+      if (doJson) return doJson
+      throw new Error('O ADN não devolveu um PDF para esta chave.')
+    }
+    return bytes
   }
 }
 
@@ -223,4 +246,22 @@ export function interpretarJson(corpo: string): Omit<RespostaDistribuicaoAdn, 's
     // registra o formato real recebido — chaves do topo e de um item do lote
     formatoRecebido: [...Object.keys(o), ...(itens[0] ? Object.keys(itens[0]).map((k) => `item:${k}`) : [])],
   }
+}
+
+/** Um PDF começa com "%PDF". */
+export const ehPdf = (bytes: Buffer): boolean => bytes.length > 4 && bytes.subarray(0, 4).toString('latin1') === '%PDF'
+
+/** Procura um PDF em base64 dentro de um JSON de resposta. */
+export function pdfDentroDeJson(corpo: string): Buffer | null {
+  try {
+    const o = JSON.parse(corpo) as Record<string, unknown>
+    for (const valor of Object.values(o)) {
+      if (typeof valor !== 'string' || valor.length < 100) continue
+      const bytes = Buffer.from(valor.replace(/\s/g, ''), 'base64')
+      if (ehPdf(bytes)) return bytes
+    }
+  } catch {
+    // não era JSON
+  }
+  return null
 }

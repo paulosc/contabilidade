@@ -28,7 +28,7 @@ import {
   type PrivadoFiscal,
 } from './modelo'
 import { ESPERA_SEM_DOCUMENTOS_MS, mesmaRaizCnpj, resolverCredenciais, sincronizarEmpresa } from './sincronizacao'
-import { ESPERA_NFSE_MS, sincronizarNfseDaEmpresa } from './sincronizacaoNfse'
+import { ESPERA_NFSE_MS, resolverCredenciaisNfse, sincronizarNfseDaEmpresa } from './sincronizacaoNfse'
 import { avaliarTesteDeConexao, explicarTesteDeConexao, type AmbienteFiscal } from '../providers/fiscal/DistribuicaoDFeProvider'
 import { UF_IBGE } from '../providers/fiscal/sefazNacional'
 
@@ -528,5 +528,34 @@ export const sincronizarNfsePeriodico = onSchedule(
     }
 
     logger.info('nfse: worker concluído', { operacao: 'workerNfse', empresas: fila.size, documentosProcessados: total })
+  },
+)
+
+/**
+ * PDF (DANFSe) de uma NFS-e da própria empresa.
+ * O ADN gera o documento auxiliar a partir do XML que ele já tem, então não guardamos o PDF:
+ * ele é buscado na hora, com o certificado da empresa.
+ */
+export const pdfNotaServico = onCall(
+  { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
+  async (req) => {
+    const { id, email } = await exigirMembro(req.auth?.uid)
+    const { chaveAcesso } = (req.data ?? {}) as { chaveAcesso?: string }
+    if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
+
+    // a nota precisa ser desta empresa: nada de baixar PDF de chave arbitrária
+    const snap = await notasServicoRef(id).doc(chaveAcesso).get()
+    if (!snap.exists) throw new HttpsError('not-found', 'Nota de serviço não encontrada nesta empresa')
+
+    const credenciais = await resolverCredenciaisNfse(id, FISCAL_CRYPTO_KEY.value())
+    try {
+      const pdf = await credenciais.provider.danfse(chaveAcesso)
+      await auditar(id, 'xml_baixado', req.auth!.uid, { email, chaveAcesso, detalhe: 'PDF (DANFSe)' })
+      return { chaveAcesso, nomeArquivo: `${chaveAcesso}.pdf`, pdfBase64: pdf.toString('base64') }
+    } catch (e) {
+      throw new HttpsError('internal', (e as Error).message)
+    } finally {
+      credenciais.provider.encerrar()
+    }
   },
 )

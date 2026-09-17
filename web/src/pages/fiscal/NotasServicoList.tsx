@@ -4,7 +4,7 @@ import { limit, orderBy } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { Download, Eraser, FileText, Receipt, RefreshCw, Settings, X } from 'lucide-react'
+import { Download, Eraser, FileDown, FileText, Receipt, RefreshCw, Settings, X } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Select, Spinner } from '../../components/ui'
@@ -82,6 +82,27 @@ export function NotasServicoList() {
       )
     } catch (e) {
       setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Falha ao buscar.' })
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  async function baixarPdf(nota: ComId<NotaServico>) {
+    setOcupado(`pdf-${nota.id}`)
+    setMsg(null)
+    try {
+      const r = await httpsCallable<unknown, { pdfBase64: string; nomeArquivo: string }>(functions, 'pdfNotaServico')({
+        chaveAcesso: nota.chaveAcesso,
+      })
+      const bytes = Uint8Array.from(atob(r.data.pdfBase64), (c) => c.charCodeAt(0))
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = r.data.nomeArquivo
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível gerar o PDF.' })
     } finally {
       setOcupado(null)
     }
@@ -260,13 +281,16 @@ export function NotasServicoList() {
             </div>
           ) : null}
 
-          {selecionada.storagePath && (
-            <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Botao tamanho="sm" carregando={ocupado === `pdf-${selecionada.id}`} onClick={() => void baixarPdf(selecionada)}>
+              <FileDown className="h-3.5 w-3.5" /> Baixar PDF (DANFSe)
+            </Botao>
+            {selecionada.storagePath && (
               <Botao tamanho="sm" variante="secundario" carregando={ocupado === `xml-${selecionada.id}`} onClick={() => void baixarXml(selecionada)}>
                 <Download className="h-3.5 w-3.5" /> Baixar XML
               </Botao>
-            </div>
-          )}
+            )}
+          </div>
         </Card>
       )}
 
@@ -324,6 +348,14 @@ export function NotasServicoList() {
                         title="Ver detalhes"
                       >
                         <FileText className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); void baixarPdf(n) }}
+                        disabled={ocupado === `pdf-${n.id}`}
+                        className="rounded-lg p-1.5 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                        title="Baixar PDF (DANFSe)"
+                      >
+                        <FileDown className="h-4 w-4" />
                       </button>
                       {n.storagePath && (
                         <button
