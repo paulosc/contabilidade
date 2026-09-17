@@ -595,9 +595,10 @@ export const diagnosticoNfseNacional = onCall(
     const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
     const credenciais = await resolverCredenciaisNfse(id, FISCAL_CRYPTO_KEY.value())
     const fila = [
+      // a página de docs do SEFIN aponta a especificação para cá (sem .json no nome)
+      'https://sefin.nfse.gov.br/SefinNacional/swagger/docs/v1',
       'https://sefin.nfse.gov.br/SefinNacional/docs/index',
       'https://adn.nfse.gov.br/contribuintes/swagger/v1/swagger.json',
-      'https://adn.nfse.gov.br/contribuintes/docs/index.html',
     ]
     const vistos = new Set<string>()
     const resumo: string[] = []
@@ -635,7 +636,11 @@ export const diagnosticoNfseNacional = onCall(
         }
         // a página de docs aponta para o JSON da especificação: segue o link, no mesmo host
         if (r.status === 200 && !rotas.length) {
-          for (const m of r.corpo.matchAll(/["'\s(]([^"'\s()]+?\.json)["'\s)]/g)) {
+          const achados = [
+            ...r.corpo.matchAll(/["'\s(]([^"'\s()]+?\.json)["'\s)]/g),
+            ...r.corpo.matchAll(/openApi\s*:\s*["']([^"']+)["']/g),
+          ]
+          for (const m of achados) {
             try {
               const ligado = new URL(m[1], alvo).toString()
               if (new URL(ligado).hostname === new URL(alvo).hostname && !vistos.has(ligado)) fila.push(ligado)
@@ -647,6 +652,23 @@ export const diagnosticoNfseNacional = onCall(
       }
     } finally {
       credenciais.provider.encerrar()
+    }
+    // O XML da última NFS-e emitida traz o DPS original como o Emissor Web o montou (regime,
+    // inscrição, endereço do tomador): é o molde para a emissão. Sem assinatura nem certificado.
+    try {
+      // filtra em memória para não depender de índice composto (papel + dataEmissao)
+      const recentes = await notasServicoRef(id).orderBy('dataEmissao', 'desc').limit(30).get()
+      const doc = recentes.docs.map((d) => d.data() as { papel?: string; storagePath?: string; origem?: string }).find((n) => n.papel === 'prestador')
+      if (doc?.storagePath && doc.origem !== 'municipal') {
+        const [bytes] = await storage.bucket().file(doc.storagePath).download()
+        const semAssinatura = bytes
+          .toString('utf8')
+          .replace(/<(\w+:)?Signature[\s\S]*?<\/(\w+:)?Signature>/g, '<!-- assinatura omitida -->')
+        logger.info('nfse: diagnóstico — última nota emitida', { empresaId: id, storagePath: doc.storagePath, xml: semAssinatura.slice(0, 60_000) })
+        resumo.push(`última nota emitida: ${doc.storagePath} (${semAssinatura.length} chars)`)
+      }
+    } catch (e) {
+      resumo.push(`última nota emitida: ERRO ${(e as Error).message}`)
     }
     await auditar(id, 'xml_baixado', req.auth!.uid, { email, detalhe: 'diagnóstico das APIs nacionais' })
     logger.info('nfse: diagnóstico das APIs nacionais', { empresaId: id, resumo })
