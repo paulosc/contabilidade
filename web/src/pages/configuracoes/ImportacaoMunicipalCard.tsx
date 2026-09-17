@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -6,10 +6,11 @@ import { httpsCallable } from 'firebase/functions'
 import { Building, Download, Save } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { functions } from '../../lib/firebase'
-import { useDocumento } from '../../services/firestore'
+import { useColecao, useDocumento } from '../../services/firestore'
 import { Alerta, Botao, Campo, Card, Input } from '../../components/ui'
 import { formatData } from '../../lib/utils'
-import type { ConfiguracaoFiscal } from '../../types'
+import { apelidoMunicipio } from '../../lib/fiscal'
+import type { ConfiguracaoFiscal, NotaServico } from '../../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
 
@@ -35,15 +36,29 @@ export function ImportacaoMunicipalCard() {
   const { membro } = useAuth()
   const ehAdmin = membro?.papel === 'admin'
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
+  const { dados: notas } = useColecao<NotaServico>('notasServico')
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
   const [incluirTomadas, setIncluirTomadas] = useState(false)
 
+  /**
+   * Sugestão a partir das notas que a empresa já emitiu: o município e a inscrição municipal
+   * estão no próprio XML. Evita fixar um município no código — o escritório atende empresas de
+   * cidades diferentes, e cada uma sugere a sua.
+   */
+  const sugestao = useMemo(() => {
+    const minha = notas.find((n) => n.papel === 'prestador' && (n.municipioEmissao || n.inscricaoMunicipalPrestador))
+    return {
+      municipio: apelidoMunicipio(minha?.municipioEmissao),
+      inscricaoMunicipal: minha?.inscricaoMunicipalPrestador ?? '',
+    }
+  }, [notas])
+
   const formMunicipio = useForm<FormMunicipio>({
     resolver: zodResolver(esquemaMunicipio),
     values: {
-      municipio: config?.municipioWebservice ?? '',
-      inscricaoMunicipal: config?.inscricaoMunicipal ?? '',
+      municipio: config?.municipioWebservice ?? sugestao.municipio,
+      inscricaoMunicipal: config?.inscricaoMunicipal ?? sugestao.inscricaoMunicipal,
     },
   })
 
@@ -69,9 +84,21 @@ export function ImportacaoMunicipalCard() {
   }
 
   async function importar(v: FormPeriodo) {
+    const municipio = formMunicipio.getValues('municipio')?.trim()
+    if (!municipio) {
+      setMsg({ tipo: 'erro', texto: 'Informe o município do web service.' })
+      return
+    }
     setOcupado('importar')
     setMsg(null)
     try {
+      // guarda o município junto, para a importação ser um clique só
+      if (municipio !== config?.municipioWebservice || formMunicipio.getValues('inscricaoMunicipal') !== config?.inscricaoMunicipal) {
+        await httpsCallable(functions, 'salvarMunicipioWebservice')({
+          municipio,
+          inscricaoMunicipal: formMunicipio.getValues('inscricaoMunicipal'),
+        })
+      }
       const r = await httpsCallable<
         unknown,
         { encontradas: number; novas: number; atualizadas: number; consultas: number; erros: number; mensagens: string[] }
@@ -119,7 +146,13 @@ export function ImportacaoMunicipalCard() {
               label="Município no web service"
               className="sm:col-span-4"
               erro={formMunicipio.formState.errors.municipio?.message}
-              dica="O apelido usado no endereço do portal, ex.: conceicaodosouros"
+              dica={
+                config?.municipioWebservice
+                  ? 'O apelido usado no endereço do portal'
+                  : sugestao.municipio
+                    ? `Sugerido pelas suas notas: ${sugestao.municipio}`
+                    : 'O apelido usado no endereço do portal, ex.: conceicaodosouros'
+              }
               obrigatorio
             >
               <Input placeholder="conceicaodosouros" {...formMunicipio.register('municipio')} />
@@ -156,12 +189,9 @@ export function ImportacaoMunicipalCard() {
               </label>
             </div>
             <div className="sm:col-span-6">
-              <Botao type="submit" carregando={ocupado === 'importar'} disabled={!config?.municipioWebservice}>
+              <Botao type="submit" carregando={ocupado === 'importar'}>
                 <Download className="h-4 w-4" /> Importar período
               </Botao>
-              {!config?.municipioWebservice && (
-                <p className="mt-2 text-xs text-amber-700">Salve o município antes de importar.</p>
-              )}
               <p className="mt-2 text-xs text-slate-500">
                 A consulta é feita mês a mês, como o padrão exige. Períodos longos podem precisar de mais de uma
                 execução — é só repetir que ela continua, sem duplicar nada.

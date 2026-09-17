@@ -80,3 +80,16 @@ export function resumoDaBusca(r: { documentosProcessados: number; notasNovas?: n
   if (r.notasAtualizadas) partes.push(`${r.notasAtualizadas} já conhecida(s)`)
   return `${r.documentosProcessados} documento(s) processado(s)${partes.length ? ` — ${partes.join(', ')}` : ''}.`
 }
+
+/**
+ * Apelido do município no endereço do portal, a partir do nome dele.
+ * As plataformas municipais usam o nome sem acento, sem espaço e em minúsculas —
+ * "Conceição dos Ouros" vira "conceicaodosouros".
+ */
+export function apelidoMunicipio(nome?: string): string {
+  return (nome ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+}
