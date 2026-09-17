@@ -467,6 +467,9 @@ export async function sincronizarEmpresa(
       ambiente: credenciais.ambiente,
       nsuInicial,
       execucaoId,
+      // projetos novos usam <projeto>.firebasestorage.app; se vier o nome errado,
+      // a falha só apareceria ao gravar o primeiro XML — melhor deixar registrado aqui
+      bucket: storage.bucket().name,
     })
 
     while (lotes < limite) {
