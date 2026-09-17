@@ -41,23 +41,42 @@ const MAX_XML_BYTES = 5 * 1024 * 1024
 
 // ---------- autorização ----------
 
-async function tenantDoUsuario(uid: string | undefined): Promise<{ id: string; papel: string; email?: string }> {
+/**
+ * Um usuário pode administrar várias empresas (é um sistema de escritório de contabilidade),
+ * então a empresa vem no pedido — mas o vínculo é SEMPRE conferido aqui, em
+ * /empresas/{id}/membros/{uid}. O `empresaId` do cliente não autoriza nada por si só: ele só
+ * diz de qual empresa se trata, e o backend decide se aquele uid pode.
+ *
+ * Sem `empresaId` no pedido, vale a última empresa aberta (usuarios/{uid}.empresaId), que é o
+ * caso de quem administra uma só.
+ */
+async function vinculoDoUsuario(
+  uid: string | undefined,
+  empresaId: unknown,
+): Promise<{ id: string; papel: string; email?: string }> {
   if (!uid) throw new HttpsError('unauthenticated', 'Faça login')
-  const usuario = await db.collection('usuarios').doc(uid).get()
-  const id = usuario.data()?.empresaId as string | undefined
-  if (!id) throw new HttpsError('failed-precondition', 'Usuário sem empresa')
+
+  let id = typeof empresaId === 'string' && empresaId.trim() ? empresaId.trim() : undefined
+  if (!id) {
+    const usuario = await db.collection('usuarios').doc(uid).get()
+    id = usuario.data()?.empresaId as string | undefined
+  }
+  if (!id) throw new HttpsError('failed-precondition', 'Informe a empresa')
+
   const membro = await db.collection('empresas').doc(id).collection('membros').doc(uid).get()
-  if (!membro.exists) throw new HttpsError('permission-denied', 'Sem acesso')
+  if (!membro.exists) throw new HttpsError('permission-denied', 'Sem acesso a esta empresa')
   return { id, papel: (membro.data()?.papel as string) ?? '', email: membro.data()?.email as string | undefined }
 }
 
-async function exigirMembro(uid: string | undefined): Promise<{ id: string; email?: string }> {
-  const { id, email } = await tenantDoUsuario(uid)
+const empresaDoPedido = (dados: unknown): unknown => (dados as { empresaId?: unknown } | undefined)?.empresaId
+
+async function exigirMembro(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
+  const { id, email } = await vinculoDoUsuario(uid, empresaDoPedido(dados))
   return { id, email }
 }
 
-async function exigirAdmin(uid: string | undefined): Promise<{ id: string; email?: string }> {
-  const { id, papel, email } = await tenantDoUsuario(uid)
+async function exigirAdmin(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
+  const { id, papel, email } = await vinculoDoUsuario(uid, empresaDoPedido(dados))
   if (papel !== 'admin') throw new HttpsError('permission-denied', 'Apenas administradores')
   return { id, email }
 }
@@ -99,7 +118,7 @@ async function lerConfig(empresaId: string): Promise<ConfiguracaoFiscal | undefi
 export const salvarCertificadoFiscal = onCall(
   { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 60, memory: '512MiB' },
   async (req) => {
-    const { id, email } = await exigirAdmin(req.auth?.uid)
+    const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
     const { pfxBase64, senha, cnpj, uf, ambiente } = (req.data ?? {}) as {
       pfxBase64?: string
       senha?: string
@@ -198,7 +217,7 @@ export const salvarCertificadoFiscal = onCall(
 
 /** Remove o certificado e desliga a integração. Os documentos já baixados continuam no sistema. */
 export const removerCertificadoFiscal = onCall({ region: REGIAO }, async (req) => {
-  const { id, email } = await exigirAdmin(req.auth?.uid)
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
   await privadoFiscalRef(id).set({ certificado: FieldValue.delete() }, { merge: true })
   // set+merge exige mapa aninhado; caminho com ponto só vale em update()
   await configFiscalRef(id).set(
@@ -216,7 +235,7 @@ export const removerCertificadoFiscal = onCall({ region: REGIAO }, async (req) =
 
 /** Liga/desliga a busca automática. */
 export const ativarIntegracaoFiscal = onCall({ region: REGIAO }, async (req) => {
-  const { id, email } = await exigirAdmin(req.auth?.uid)
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
   const { ativo } = (req.data ?? {}) as { ativo?: boolean }
   const config = await lerConfig(id)
   if (ativo && !config?.certificado) {
@@ -251,7 +270,7 @@ export const ativarIntegracaoFiscal = onCall({ region: REGIAO }, async (req) => 
 export const testarConexaoFiscal = onCall(
   { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
   async (req) => {
-    const { id, email } = await exigirAdmin(req.auth?.uid)
+    const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
     let credenciais
     try {
       credenciais = await resolverCredenciais(id, FISCAL_CRYPTO_KEY.value())
@@ -281,7 +300,7 @@ export const testarConexaoFiscal = onCall(
 export const sincronizarFiscalAgora = onCall(
   { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 540, memory: '1GiB' },
   async (req) => {
-    const { id, email } = await exigirMembro(req.auth?.uid)
+    const { id, email } = await exigirMembro(req.auth?.uid, req.data)
     const resultado = await sincronizarEmpresa(id, FISCAL_CRYPTO_KEY.value(), { origem: 'manual' })
     await auditar(id, 'sincronizacao_manual', req.auth!.uid, {
       email,
@@ -295,7 +314,7 @@ export const sincronizarFiscalAgora = onCall(
 
 /** Resumo para a tela (o mesmo documento que o onSnapshot acompanha). */
 export const statusFiscal = onCall({ region: REGIAO }, async (req) => {
-  const { id } = await exigirMembro(req.auth?.uid)
+  const { id } = await exigirMembro(req.auth?.uid, req.data)
   const config = await lerConfig(id)
   return config ?? { tipo: 'fiscal', ativo: false, ambiente: ambientePadrao() }
 })
@@ -305,7 +324,7 @@ export const statusFiscal = onCall({ region: REGIAO }, async (req) => {
  * Passa pelo backend (em vez de link direto no Storage) para registrar quem baixou o quê.
  */
 export const xmlNotaFiscal = onCall({ region: REGIAO, timeoutSeconds: 60 }, async (req) => {
-  const { id, email } = await exigirMembro(req.auth?.uid)
+  const { id, email } = await exigirMembro(req.auth?.uid, req.data)
   const { chaveAcesso, storagePath } = (req.data ?? {}) as { chaveAcesso?: string; storagePath?: string }
   if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
 
@@ -408,7 +427,7 @@ export type { ConfiguracaoFiscal, PrivadoFiscal }
  * (NF-e de mercadoria na SEFAZ, NFS-e de serviço no ADN) e nem toda empresa usa os dois.
  */
 export const ativarNfse = onCall({ region: REGIAO }, async (req) => {
-  const { id, email } = await exigirAdmin(req.auth?.uid)
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
   const { ativo } = (req.data ?? {}) as { ativo?: boolean }
   const config = await lerConfig(id)
   if (ativo && !config?.certificado) {
@@ -439,7 +458,7 @@ export const ativarNfse = onCall({ region: REGIAO }, async (req) => {
 export const sincronizarNfseAgora = onCall(
   { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 540, memory: '1GiB' },
   async (req) => {
-    const { id, email } = await exigirMembro(req.auth?.uid)
+    const { id, email } = await exigirMembro(req.auth?.uid, req.data)
     const resultado = await sincronizarNfseDaEmpresa(id, FISCAL_CRYPTO_KEY.value(), { origem: 'manual' })
     await auditar(id, 'sincronizacao_manual', req.auth!.uid, {
       email,
@@ -453,7 +472,7 @@ export const sincronizarNfseAgora = onCall(
 
 /** Devolve o XML de uma NFS-e da própria empresa, registrando quem baixou. */
 export const xmlNotaServico = onCall({ region: REGIAO, timeoutSeconds: 60 }, async (req) => {
-  const { id, email } = await exigirMembro(req.auth?.uid)
+  const { id, email } = await exigirMembro(req.auth?.uid, req.data)
   const { chaveAcesso, storagePath } = (req.data ?? {}) as { chaveAcesso?: string; storagePath?: string }
   if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
 
@@ -539,7 +558,7 @@ export const sincronizarNfsePeriodico = onSchedule(
 export const pdfNotaServico = onCall(
   { region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 120, memory: '512MiB' },
   async (req) => {
-    const { id, email } = await exigirMembro(req.auth?.uid)
+    const { id, email } = await exigirMembro(req.auth?.uid, req.data)
     const { chaveAcesso } = (req.data ?? {}) as { chaveAcesso?: string }
     if (!chaveAcesso) throw new HttpsError('invalid-argument', 'Informe a chave de acesso')
 

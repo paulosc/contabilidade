@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { limit, orderBy } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
@@ -7,7 +7,7 @@ import { httpsCallable } from 'firebase/functions'
 import { Download, Eraser, FileDown, FileText, Receipt, RefreshCw, Settings, X } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
-import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Select, Spinner } from '../../components/ui'
+import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner } from '../../components/ui'
 import { formatBRL, formatCpfCnpj, formatData, somenteDigitos } from '../../lib/utils'
 import { esquemaFiltroNotas, filtroVazio, formatarChave, nsuLegivel, type FormFiltroNotas } from '../../lib/fiscal'
 import {
@@ -19,7 +19,7 @@ import {
   type NotaServico,
 } from '../../types'
 
-/** A SEFAZ distribui 90 dias; aqui o teto é folgado e evita listagem sem fim. */
+/** Teto da assinatura em tempo real. Ao ser atingido, a tela avisa em vez de esconder. */
 const TETO_LISTAGEM = 500
 
 const inicioDoDia = (iso: string) => new Date(`${iso}T00:00:00`)
@@ -30,6 +30,8 @@ export function NotasServicoList() {
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
   const [selecionada, setSelecionada] = useState<ComId<NotaServico> | null>(null)
   const [papel, setPapel] = useState('')
+  const [pagina, setPagina] = useState(1)
+  const [porPagina, setPorPagina] = useState(50)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [msg, setMsg] = useState<{ tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null>(null)
 
@@ -56,6 +58,16 @@ export function NotasServicoList() {
       return true
     })
   }, [dados, filtro, papel])
+
+  // mudou o filtro: volta para a primeira página, senão a tela fica num trecho que sumiu
+  useEffect(() => {
+    setPagina(1)
+  }, [dados, filtro, papel])
+
+  const daPagina = useMemo(
+    () => filtradas.slice((pagina - 1) * porPagina, pagina * porPagina),
+    [filtradas, pagina, porPagina],
+  )
 
   const totais = useMemo(() => {
     const validas = filtradas.filter((n) => n.status !== 'cancelada')
@@ -169,6 +181,15 @@ export function NotasServicoList() {
               Ative em Configurações
             </Link>{' '}
             para começar a receber as notas de serviço automaticamente.
+          </Alerta>
+        </div>
+      )}
+
+      {dados.length >= TETO_LISTAGEM && (
+        <div className="mb-4">
+          <Alerta tipo="info">
+            Esta tela acompanha as {TETO_LISTAGEM} notas de serviço mais recentes. Use o filtro de período para
+            alcançar as anteriores.
           </Alerta>
         </div>
       )}
@@ -324,7 +345,7 @@ export function NotasServicoList() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtradas.map((n) => (
+              {daPagina.map((n) => (
                 <tr key={n.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setSelecionada(n)}>
                   <td className="px-4 py-3 font-medium text-slate-900">{n.numero ?? '—'}</td>
                   <td className="px-4 py-3">
@@ -373,6 +394,13 @@ export function NotasServicoList() {
               ))}
             </tbody>
           </table>
+          <Paginacao
+            pagina={pagina}
+            porPagina={porPagina}
+            total={filtradas.length}
+            aoMudarPagina={setPagina}
+            aoMudarPorPagina={setPorPagina}
+          />
         </div>
       )}
     </>

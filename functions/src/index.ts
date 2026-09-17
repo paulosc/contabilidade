@@ -10,7 +10,7 @@ import { REGIAO } from './lib/config'
 
 setGlobalOptions({ region: REGIAO, maxInstances: 10 })
 
-export { aoEscreverMembro, garantirClaims } from './triggers'
+export { aoEscreverMembro, aoEscreverEmpresa, sincronizarMinhasEmpresas } from './triggers'
 export {
   salvarCertificadoFiscal,
   removerCertificadoFiscal,

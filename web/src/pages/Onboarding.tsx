@@ -20,7 +20,7 @@ const schema = z.object({
 })
 type Form = z.infer<typeof schema>
 
-export function Onboarding() {
+export function Onboarding({ adicional = false }: { adicional?: boolean } = {}) {
   const { criarEmpresa, user, sair } = useAuth()
   const navigate = useNavigate()
   const [erro, setErro] = useState<string | null>(null)
@@ -53,7 +53,10 @@ export function Onboarding() {
   }
 
   return (
-    <AuthLayout titulo="Cadastre sua empresa" subtitulo="É o CNPJ dela que será consultado na SEFAZ">
+    <AuthLayout
+      titulo={adicional ? 'Adicionar empresa' : 'Cadastre sua empresa'}
+      subtitulo={adicional ? 'O escritório passa a administrar mais esta empresa' : 'É o CNPJ dela que será consultado na SEFAZ'}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
         {erro && <Alerta>{erro}</Alerta>}
 
@@ -100,12 +103,18 @@ export function Onboarding() {
         </div>
 
         <Botao type="submit" carregando={isSubmitting} className="mt-2 w-full">
-          Criar empresa e entrar
+          {adicional ? 'Adicionar empresa' : 'Criar empresa e entrar'}
         </Botao>
 
-        <button type="button" onClick={() => void sair()} className="text-center text-sm text-slate-500 hover:underline">
-          Sair desta conta
-        </button>
+        {adicional ? (
+          <button type="button" onClick={() => navigate('/', { replace: true })} className="text-center text-sm text-slate-500 hover:underline">
+            Cancelar
+          </button>
+        ) : (
+          <button type="button" onClick={() => void sair()} className="text-center text-sm text-slate-500 hover:underline">
+            Sair desta conta
+          </button>
+        )}
       </form>
     </AuthLayout>
   )

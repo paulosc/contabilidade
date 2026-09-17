@@ -25,6 +25,7 @@ export interface Endereco {
 export interface Usuario {
   nome: string
   email: string
+  /** Última empresa aberta (preferência de tela, não é permissão) */
   empresaId?: string
   criadoEm: Timestamp
 }
@@ -42,6 +43,18 @@ export interface Empresa {
   endereco?: Endereco
   criadoPor: string
   criadoEm: Timestamp
+  atualizadoEm?: Timestamp
+}
+
+/**
+ * /usuarios/{uid}/empresas/{empresaId} — espelho das empresas do usuário, mantido pelo backend.
+ * É só um índice para a troca de empresa; quem manda no acesso é /empresas/{id}/membros/{uid}.
+ */
+export interface VinculoEmpresa {
+  empresaId: string
+  nome: string
+  cnpj?: string
+  papel: Papel
   atualizadoEm?: Timestamp
 }
 

@@ -1,20 +1,18 @@
 rules_version = '2';
 
-// Arquivos organizados por empresa: /empresas/{id}/fiscal/{ano}/{chave}-*.xml
+// Arquivos organizados por empresa: /empresas/{id}/fiscal/... (NF-e) e /empresas/{id}/nfse/...
 //
-// Isolamento por empresa via custom claim `empresaId`, definida pela Cloud Function
-// aoEscreverMembro (e garantida no login por garantirClaims). Os XMLs são gravados pelo
-// backend (Admin SDK, que não passa por estas regras) e lidos pela função xmlNotaFiscal,
-// que registra quem baixou o quê.
+// O cliente NÃO acessa o Storage: os XMLs e os PDFs saem pelas callables xmlNotaFiscal,
+// xmlNotaServico e pdfNotaServico, que conferem o vínculo do usuário com a empresa e ainda
+// registram na auditoria quem baixou o quê. A gravação é do backend, pelo Admin SDK, que não
+// passa por estas regras.
+//
+// Esta é também a razão de não existir mais custom claim de empresa no token: num escritório de
+// contabilidade um usuário administra muitas empresas, e a lista não caberia na claim.
 service firebase.storage {
   match /b/{bucket}/o {
-    function daEmpresa(empresaId) {
-      return request.auth != null && request.auth.token.empresaId == empresaId;
-    }
-
-    match /empresas/{empresaId}/{allPaths=**} {
-      allow read: if daEmpresa(empresaId);
-      allow write: if false;
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

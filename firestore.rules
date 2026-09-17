@@ -26,10 +26,18 @@ service cloud.firestore {
         && get(membroPath(empresaId)).data.papel == 'admin';
     }
 
-    // Perfil do usuário (aponta para a empresa dele)
+    // Perfil do usuário. `empresaId` guarda apenas a última empresa aberta — o acesso de
+    // verdade vem de /empresas/{id}/membros/{uid}.
     match /usuarios/{uid} {
       allow read, create, update: if logado() && request.auth.uid == uid;
       allow delete: if false;
+
+      // Espelho das empresas do usuário, mantido pelo gatilho aoEscreverMembro.
+      // É só um índice para a tela listar: quem manda no acesso continua sendo `membros`.
+      match /empresas/{empresaId} {
+        allow read: if logado() && request.auth.uid == uid;
+        allow write: if false;
+      }
     }
 
     match /empresas/{empresaId} {
@@ -42,7 +50,8 @@ service cloud.firestore {
       allow delete: if false;
 
       match /membros/{uid} {
-        allow read: if ehMembro(empresaId);
+        // o próprio usuário lê o seu vínculo mesmo antes de a tela saber que ele é membro
+        allow read: if ehMembro(empresaId) || (logado() && request.auth.uid == uid);
         // O criador se adiciona como admin no mesmo batch do onboarding
         // (getAfter enxerga o estado após o batch). Admins adicionam outros membros.
         allow create: if logado() && (

@@ -11,10 +11,10 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth'
-import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../lib/firebase'
-import type { ComId, Empresa, Membro, Usuario } from '../types'
+import type { ComId, Empresa, Membro, Usuario, VinculoEmpresa } from '../types'
 
 export type ProvedorSocial = 'google' | 'apple'
 
@@ -30,8 +30,12 @@ export interface DadosNovaEmpresa {
 interface AuthContextValue {
   user: User | null
   perfil: Usuario | null
+  /** Empresa aberta no momento */
   empresa: ComId<Empresa> | null
   membro: Membro | null
+  /** Todas as empresas que este usuário administra (escritório de contabilidade) */
+  empresas: ComId<VinculoEmpresa>[]
+  trocarEmpresa(empresaId: string): Promise<void>
   /** Por que a empresa não carregou, quando o usuário tem empresaId mas o documento não veio. */
   erroEmpresa: 'nao-encontrada' | 'sem-permissao' | 'falha' | null
   carregando: boolean
@@ -40,7 +44,7 @@ interface AuthContextValue {
   cadastrar(nome: string, email: string, senha: string): Promise<void>
   recuperarSenha(email: string): Promise<void>
   sair(): Promise<void>
-  criarEmpresa(dados: DadosNovaEmpresa): Promise<void>
+  criarEmpresa(dados: DadosNovaEmpresa): Promise<string>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -49,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [authPronto, setAuthPronto] = useState(false)
   const [erroEmpresa, setErroEmpresa] = useState<AuthContextValue['erroEmpresa']>(null)
+  const [vinculos, setVinculos] = useState<{ uid: string | null; lista: ComId<VinculoEmpresa>[] }>({ uid: null, lista: [] })
 
   // Perfil carregado e para qual uid ele vale (evita usar dado de outro usuário / estado antigo)
   const [perfilEstado, setPerfilEstado] = useState<{ uid: string | null; perfil: Usuario | null }>({ uid: null, perfil: null })
@@ -80,8 +85,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
   }, [user])
 
+  // 2b) empresas do usuário (espelho mantido pelo backend)
+  useEffect(() => {
+    if (!user) {
+      setVinculos({ uid: null, lista: [] })
+      return
+    }
+    const uid = user.uid
+    return onSnapshot(
+      collection(db, 'usuarios', uid, 'empresas'),
+      (snap) => {
+        const lista = snap.docs
+          .map((d) => ({ id: d.id, ...(d.data() as VinculoEmpresa) }))
+          .sort((a, b) => (a.nome ?? '').localeCompare(b.nome ?? ''))
+        setVinculos({ uid, lista })
+        // espelho vazio com perfil apontando para uma empresa: reconstrói uma vez
+        if (snap.empty) void httpsCallable(functions, 'sincronizarMinhasEmpresas')({}).catch(() => undefined)
+      },
+      () => setVinculos({ uid, lista: [] }),
+    )
+  }, [user])
+
   const perfil = user && perfilEstado.uid === user.uid ? perfilEstado.perfil : null
-  const empresaId = perfil?.empresaId ?? null
+  const empresas = user && vinculos.uid === user.uid ? vinculos.lista : []
+  // a empresa aberta é a do perfil; se ela sumir do espelho, cai para a primeira disponível
+  const empresaId = perfil?.empresaId ?? (empresas.length ? empresas[0].empresaId : null)
 
   // 3) empresa + membro
   useEffect(() => {
@@ -126,25 +154,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, empresaId])
 
-  // Garante a claim `empresaId` no token (usada pelas regras do Storage). Sem bloquear a UI.
-  useEffect(() => {
-    if (!user || !empresaId) return
-    let cancelado = false
-    ;(async () => {
-      try {
-        const r = await user.getIdTokenResult()
-        if (r.claims.empresaId === empresaId) return
-        await httpsCallable(functions, 'garantirClaims')({})
-        if (!cancelado) await user.getIdToken(true)
-      } catch {
-        // backend indisponível: segue sem claim (as regras aceitam token sem a claim)
-      }
-    })()
-    return () => {
-      cancelado = true
-    }
-  }, [user, empresaId])
-
   const perfilPronto = !user || perfilEstado.uid === user.uid
   const tenantPronto = !empresaId || tenantEstado.id === empresaId
   const carregando = !authPronto || !perfilPronto || !tenantPronto
@@ -156,8 +165,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     perfil,
     empresa,
     membro,
+    empresas,
     erroEmpresa: empresa ? null : erroEmpresa,
     carregando,
+
+    async trocarEmpresa(empresaId) {
+      if (!user) throw new Error('Usuário não autenticado')
+      // `empresaId` no perfil é só a preferência de qual empresa abrir; o acesso continua
+      // sendo decidido por /empresas/{id}/membros/{uid}, no backend e nas Rules
+      await updateDoc(doc(db, 'usuarios', user.uid), { empresaId })
+    },
 
     async entrar(email, senha) {
       await signInWithEmailAndPassword(auth, email, senha)
@@ -224,6 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       batch.set(doc(db, 'usuarios', user.uid), { nome, email: user.email, empresaId: empresaRef.id }, { merge: true })
       await batch.commit()
+      return empresaRef.id
     },
   }
 

@@ -28,6 +28,7 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<AppShell />}>
               <Route index element={<Dashboard />} />
+              <Route path="empresas/nova" element={<Onboarding adicional />} />
               <Route path="notas-fiscais" element={<NotasFiscaisList />} />
               <Route path="notas-servico" element={<NotasServicoList />} />
               <Route path="configuracoes" element={<Configuracoes />} />

@@ -222,6 +222,68 @@ export function TelaCarregando() {
   )
 }
 
+// ---------- Paginação ----------
+
+/**
+ * Paginação de listas já carregadas e filtradas em memória.
+ * As listagens assinam o Firestore em tempo real (onSnapshot) com um teto de documentos,
+ * então paginar aqui é o que mantém a tela leve sem abrir mão da atualização automática.
+ */
+export function Paginacao({
+  pagina,
+  porPagina,
+  total,
+  aoMudarPagina,
+  aoMudarPorPagina,
+}: {
+  pagina: number
+  porPagina: number
+  total: number
+  aoMudarPagina: (p: number) => void
+  aoMudarPorPagina: (n: number) => void
+}) {
+  const paginas = Math.max(1, Math.ceil(total / porPagina))
+  const atual = Math.min(pagina, paginas)
+  const primeiro = total === 0 ? 0 : (atual - 1) * porPagina + 1
+  const ultimo = Math.min(atual * porPagina, total)
+
+  return (
+    <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm sm:flex-row">
+      <p className="text-slate-600">
+        {total === 0 ? 'Nenhum resultado' : <>Mostrando <span className="font-medium">{primeiro}–{ultimo}</span> de <span className="font-medium">{total}</span></>}
+      </p>
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-slate-600">
+          Por página
+          <Select
+            className="h-8 w-20"
+            value={porPagina}
+            onChange={(e) => {
+              aoMudarPorPagina(Number(e.target.value))
+              aoMudarPagina(1)
+            }}
+          >
+            {[25, 50, 100, 200].map((n) => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </Select>
+        </label>
+        <div className="flex items-center gap-1">
+          <Botao tamanho="sm" variante="secundario" disabled={atual <= 1} onClick={() => aoMudarPagina(atual - 1)}>
+            Anterior
+          </Botao>
+          <span className="px-2 whitespace-nowrap text-slate-600">
+            {atual} de {paginas}
+          </span>
+          <Botao tamanho="sm" variante="secundario" disabled={atual >= paginas} onClick={() => aoMudarPagina(atual + 1)}>
+            Próxima
+          </Botao>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /** Ícone do Instagram (lucide não inclui marcas). */
 export function IconeInstagram({ className }: { className?: string }) {
   return (
