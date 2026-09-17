@@ -204,14 +204,23 @@ export function interpretarJson(corpo: string): Omit<RespostaDistribuicaoAdn, 's
   }
 
   const mensagens = campo(o, 'Mensagem', 'Mensagens', 'Erros', 'Erro', 'Alertas', 'Message')
+
+  // O ADN não devolve ultNSU/maxNSU no topo da resposta (confirmado numa execução real, cujo
+  // formato foi: StatusProcessamento, LoteDFe, Alertas, Erros, TipoAmbiente, VersaoAplicativo,
+  // DataHoraProcessamento). O NSU vem em cada documento do lote, então o "último NSU da
+  // sequência encontrada" de que fala o manual é o maior NSU do lote.
+  const nsusDoLote = documentos.map((d) => Number(d.nsu)).filter((n) => Number.isFinite(n) && n > 0)
+  const ultNSUDoTopo = texto(campo(o, 'ultNSU', 'UltimoNSU', 'UltNSU', 'NSUFinal'))
+  const ultNSU = ultNSUDoTopo ?? (nsusDoLote.length ? String(Math.max(...nsusDoLote)) : undefined)
+
   return {
-    ultNSU: texto(campo(o, 'ultNSU', 'UltimoNSU', 'UltNSU', 'NSUFinal')),
+    ultNSU,
     maxNSU: texto(campo(o, 'maxNSU', 'MaiorNSU', 'MaxNSU', 'NSUMaximo')),
     documentos,
     mensagem: Array.isArray(mensagens)
       ? mensagens.map((m) => (typeof m === 'string' ? m : JSON.stringify(m))).join('; ') || undefined
       : texto(mensagens),
-    // registra o formato real recebido, para confirmar os nomes na primeira execução
-    formatoRecebido: Object.keys(o),
+    // registra o formato real recebido — chaves do topo e de um item do lote
+    formatoRecebido: [...Object.keys(o), ...(itens[0] ? Object.keys(itens[0]).map((k) => `item:${k}`) : [])],
   }
 }

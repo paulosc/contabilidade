@@ -215,6 +215,54 @@ describe('controle de NSU do ADN', () => {
   })
 })
 
+describe('NSU quando o ADN não devolve ultNSU no topo', () => {
+  // formato real observado em produção: StatusProcessamento, LoteDFe, Alertas, Erros,
+  // TipoAmbiente, VersaoAplicativo, DataHoraProcessamento — sem ultNSU nem maxNSU
+  const respostaReal = (nsus: number[]) =>
+    JSON.stringify({
+      StatusProcessamento: 'Processado',
+      LoteDFe: nsus.map((n) => ({ NSU: n, ArquivoXml: Buffer.from(nfse(), 'utf8').toString('base64') })),
+      Alertas: [],
+      Erros: [],
+      TipoAmbiente: 1,
+      VersaoAplicativo: '1.00',
+      DataHoraProcessamento: '2026-09-17T16:11:00-03:00',
+    })
+
+  it('deriva o ultNSU do maior NSU do lote', () => {
+    const r = interpretarJson(respostaReal([14, 15, 16]))
+    assert.equal(r.documentos.length, 3)
+    assert.equal(r.ultNSU, '16')
+    assert.equal(r.maxNSU, undefined)
+  })
+
+  it('registra também as chaves de um item do lote', () => {
+    const r = interpretarJson(respostaReal([1]))
+    assert.ok(r.formatoRecebido?.includes('LoteDFe'))
+    assert.ok(r.formatoRecebido?.includes('item:NSU'))
+    assert.ok(r.formatoRecebido?.includes('item:ArquivoXml'))
+  })
+
+  it('avança e continua quando o NSU derivado é maior que o atual', () => {
+    const passo = avaliarRespostaNfse({ ultNSU: '16', documentos: [{ xml: '<x/>' }] }, '0')
+    assert.equal(passo.acao, 'continuar')
+    assert.equal(passo.nsu, '16')
+    assert.equal(passo.motivo, undefined)
+  })
+
+  it('PARA quando vêm documentos mas o NSU não avança, em vez de repetir o mesmo lote', () => {
+    const passo = avaliarRespostaNfse({ documentos: [{ xml: '<x/>' }] }, '0')
+    assert.equal(passo.acao, 'parar')
+    assert.equal(passo.motivo, 'sem-nsu')
+    assert.equal(passo.temDocumentos, true, 'o lote ainda precisa ser gravado')
+  })
+
+  it('também para se o NSU devolvido for menor ou igual ao atual', () => {
+    assert.equal(avaliarRespostaNfse({ ultNSU: '16', documentos: [{ xml: '<x/>' }] }, '16').motivo, 'sem-nsu')
+    assert.equal(avaliarRespostaNfse({ ultNSU: '9', documentos: [{ xml: '<x/>' }] }, '16').motivo, 'sem-nsu')
+  })
+})
+
 describe('endereços e raiz de CNPJ', () => {
   it('usa os endereços oficiais do ADN', () => {
     assert.equal(ADN_URLS.producao, 'https://adn.nfse.gov.br/contribuintes')

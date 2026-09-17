@@ -47,12 +47,17 @@ export interface PassoNfse {
   nsu: string
   situacao: SituacaoSync
   temDocumentos: boolean
+  /** 'sem-nsu' = vieram documentos mas o NSU não avançou; repetir seria buscar o mesmo lote */
+  motivo?: 'sem-nsu'
 }
 
 /**
  * Próximo passo a partir da resposta do ADN.
- * Sem documentos, ou `ultNSU` alcançando o `maxNSU`, encerra a varredura e agenda a próxima
- * janela; caso contrário continua do `ultNSU` devolvido.
+ *
+ * Encerra a varredura quando o lote vem vazio ou quando o NSU alcança o maxNSU. E encerra
+ * também — isto é proteção, não regra do manual — quando vieram documentos mas o NSU **não
+ * avançou**: sem avanço, a consulta seguinte traria exatamente o mesmo lote, e o laço só
+ * gastaria chamada até bater no limite de lotes.
  */
 export function avaliarRespostaNfse(
   resposta: Pick<RespostaDistribuicaoAdn, 'ultNSU' | 'maxNSU' | 'documentos'>,
@@ -61,6 +66,9 @@ export function avaliarRespostaNfse(
   const temDocumentos = (resposta.documentos?.length ?? 0) > 0
   const nsu = resposta.ultNSU ? nsuAdn(resposta.ultNSU) : nsuAtual
   if (!temDocumentos) return { acao: 'parar', nsu, situacao: 'aguardando', temDocumentos: false }
+  if (Number(nsu) <= Number(nsuAdn(nsuAtual))) {
+    return { acao: 'parar', nsu, situacao: 'aguardando', temDocumentos: true, motivo: 'sem-nsu' }
+  }
   const acabou = resposta.maxNSU !== undefined && Number(nsu) >= Number(nsuAdn(resposta.maxNSU))
   return { acao: acabou ? 'parar' : 'continuar', nsu, situacao: 'aguardando', temDocumentos: true }
 }
@@ -385,10 +393,19 @@ export async function sincronizarNfseDaEmpresa(
     while (lotes < limite) {
       const resposta = await credenciais.provider.distribuirPorNsu(nsu)
       lotes++
-      if (resposta.maxNSU) maxNsu = nsuAdn(resposta.maxNSU)
+      // o ADN não devolve maxNSU; mostramos o maior NSU já visto, que é o que temos
+      maxNsu = resposta.maxNSU ? nsuAdn(resposta.maxNSU) : maxNsu
       if (resposta.formatoRecebido) formatoRecebido = resposta.formatoRecebido
 
       const passo = avaliarRespostaNfse(resposta, nsu)
+      if (passo.motivo === 'sem-nsu') {
+        logger.warn('nfse: lote sem NSU utilizável, varredura encerrada para não repetir', {
+          empresaId,
+          nsu,
+          documentos: resposta.documentos.length,
+          formatoRecebido: resposta.formatoRecebido,
+        })
+      }
       if (passo.temDocumentos) {
         for (const documento of resposta.documentos) {
           try {
@@ -400,6 +417,7 @@ export async function sincronizarNfseDaEmpresa(
         }
         // o NSU só avança depois de gravar: execução interrompida repete o lote
         nsu = passo.nsu
+        if (Number(nsu) > Number(maxNsu)) maxNsu = nsu
         await ref.set(
           limpar({
             sincronizacaoNfse: {
