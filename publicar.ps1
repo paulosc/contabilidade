@@ -1,4 +1,4 @@
-# Publica o sistema no Firebase: functions, regras e índices do Firestore, regras do Storage e o site.
+﻿# Publica o sistema no Firebase: functions, regras e índices do Firestore, regras do Storage e o site.
 #
 #   .\publicar.ps1                 publica tudo
 #   .\publicar.ps1 hosting         só o site
