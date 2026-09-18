@@ -10,6 +10,15 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { gerarDanfse } from './danfse'
+import {
+  ErroSerpro,
+  declaracaoDoPeriodo,
+  gerarDarf as gerarDarfNaReceita,
+  gerarDas as gerarDasNaReceita,
+  removerCredenciais as removerCredenciaisDoSerpro,
+  salvarCredenciais as salvarCredenciaisDoSerpro,
+  testar as testarSerproDaEmpresa,
+} from './serproServico'
 import { ErroGuia, excluirGuia as excluirGuiaDaEmpresa, gerarRecibo, importarGuia as importarGuiaDaEmpresa, marcarPagamento, pdfDaGuia } from './guiasServico'
 import { ErroDps, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
 import { ErroEmissao, cancelarNfse as cancelarNfseNoSefin, emitirNfse as emitirNfseNoSefin, modeloDeNota, numeracaoAtual } from './emissao'
@@ -841,6 +850,89 @@ export const gerarReciboDeHonorarios = onCall({ region: REGIAO, timeoutSeconds: 
     return r
   } catch (e) {
     return traduzirErroGuia(e)
+  }
+})
+
+// ---------- geração oficial de guias: Integra Contador (Serpro) ----------
+
+const traduzirErroSerpro = (e: unknown): never => {
+  if (e instanceof ErroSerpro || e instanceof ErroGuia) throw new HttpsError('failed-precondition', e.message)
+  throw new HttpsError('internal', (e as Error).message)
+}
+
+const periodoDoPedido = (dados: unknown): string => {
+  const p = (dados as { periodo?: unknown })?.periodo
+  if (typeof p !== 'string' || !/^\d{4}-\d{2}$/.test(p)) throw new HttpsError('invalid-argument', 'Informe a competência (AAAA-MM)')
+  return p
+}
+
+/** Guarda a consumer key/secret do contrato com o Serpro — cifradas, e nunca devolvidas. */
+export const salvarCredenciaisSerpro = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const { consumerKey, consumerSecret } = (req.data ?? {}) as { consumerKey?: string; consumerSecret?: string }
+  if (!consumerKey || !consumerSecret) throw new HttpsError('invalid-argument', 'Informe a consumer key e a consumer secret')
+  try {
+    await salvarCredenciaisDoSerpro(id, FISCAL_CRYPTO_KEY.value(), consumerKey, consumerSecret)
+    await auditar(id, 'serpro_configurado', req.auth!.uid, { email })
+    return { ok: true }
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+export const removerCredenciaisSerpro = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  await removerCredenciaisDoSerpro(id)
+  await auditar(id, 'serpro_removido', req.auth!.uid, { email })
+  return { ok: true }
+})
+
+/** Demonstração oficial do Serpro (sem contrato) e, se houver credenciais, a autenticação de produção. */
+export const testarSerpro = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  return testarSerproDaEmpresa(id, FISCAL_CRYPTO_KEY.value())
+})
+
+/** Gera o DAS do período na Receita (PGDASD/GERARDAS12). A declaração precisa já ter sido transmitida. */
+export const gerarDasReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const periodo = periodoDoPedido(req.data)
+  const { dataConsolidacao } = (req.data ?? {}) as { dataConsolidacao?: string }
+  if (dataConsolidacao && !/^\d{4}-\d{2}-\d{2}$/.test(dataConsolidacao)) throw new HttpsError('invalid-argument', 'Data de consolidação inválida')
+  try {
+    const r = await gerarDasNaReceita(id, FISCAL_CRYPTO_KEY.value(), req.auth!.uid, periodo, dataConsolidacao)
+    await auditar(id, 'guia_gerada_receita', req.auth!.uid, { email, detalhe: `DAS ${periodo} · ${r.guia.numeroDocumento ?? r.id}` })
+    return { id: r.id, nova: r.nova, valor: r.guia.valor ?? null, vencimento: r.guia.vencimento ?? null, observacoes: r.observacoes, avisos: r.guia.avisos }
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+/** Gera o DARF da DCTFWeb do período (GERARGUIA31 com recibo; GERARGUIAANDAMENTO313 sem). */
+export const gerarDarfReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const periodo = periodoDoPedido(req.data)
+  const { numeroRecibo } = (req.data ?? {}) as { numeroRecibo?: number }
+  if (numeroRecibo !== undefined && !(Number.isInteger(numeroRecibo) && numeroRecibo > 0)) throw new HttpsError('invalid-argument', 'Número do recibo inválido')
+  try {
+    const r = await gerarDarfNaReceita(id, FISCAL_CRYPTO_KEY.value(), req.auth!.uid, periodo, numeroRecibo)
+    await auditar(id, 'guia_gerada_receita', req.auth!.uid, { email, detalhe: `DARF DCTFWeb ${periodo} · ${r.guia.numeroDocumento ?? r.id}` })
+    return { id: r.id, nova: r.nova, valor: r.guia.valor ?? null, vencimento: r.guia.vencimento ?? null, avisos: r.guia.avisos }
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+/** Recibo e declaração do PGDAS-D do período: confirma se o contador já transmitiu. */
+export const declaracaoPgdasd = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  const periodo = periodoDoPedido(req.data)
+  try {
+    const d = await declaracaoDoPeriodo(id, FISCAL_CRYPTO_KEY.value(), periodo)
+    const arquivo = (a?: { nomeArquivo: string; pdf: Buffer }) => (a ? { nomeArquivo: a.nomeArquivo, pdfBase64: a.pdf.toString('base64') } : null)
+    return { numeroDeclaracao: d.numeroDeclaracao ?? null, recibo: arquivo(d.recibo), declaracao: arquivo(d.declaracao) }
+  } catch (e) {
+    return traduzirErroSerpro(e)
   }
 })
 

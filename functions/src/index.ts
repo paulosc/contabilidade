@@ -35,6 +35,12 @@ export {
   marcarGuiaPaga,
   excluirGuia,
   gerarReciboDeHonorarios,
+  salvarCredenciaisSerpro,
+  removerCredenciaisSerpro,
+  testarSerpro,
+  gerarDasReceita,
+  gerarDarfReceita,
+  declaracaoPgdasd,
   salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'

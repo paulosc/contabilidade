@@ -53,7 +53,13 @@ export interface ResultadoImportacaoGuia {
 }
 
 /** Importa o PDF de uma guia: lê, confere se é desta empresa, guarda o arquivo e os dados. */
-export async function importarGuia(empresaId: string, uid: string, nomeArquivo: string, pdf: Buffer): Promise<ResultadoImportacaoGuia> {
+export async function importarGuia(
+  empresaId: string,
+  uid: string,
+  nomeArquivo: string,
+  pdf: Buffer,
+  origem: 'upload' | 'serpro' = 'upload',
+): Promise<ResultadoImportacaoGuia> {
   if (pdf.length > TAMANHO_MAXIMO) throw new ErroGuia('Arquivo grande demais (máximo 7 MB).')
   if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new ErroGuia('O arquivo não é um PDF.')
 
@@ -103,7 +109,7 @@ export async function importarGuia(empresaId: string, uid: string, nomeArquivo: 
       avisos: guia.avisos,
       // a baixa de pagamento feita antes não se perde num reenvio
       status: atual?.status ?? ('pendente' as const),
-      origem: 'upload' as const,
+      origem,
       nomeArquivo: nomeArquivo.slice(0, 200),
       storagePath,
       hashPdf,

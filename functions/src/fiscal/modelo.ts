@@ -24,6 +24,8 @@ export const COL_AUDITORIA = 'auditoriaFiscal'
 export const raizRef = (empresaId: string) => db.collection('empresas').doc(empresaId)
 export const privadoFiscalRef = (empresaId: string) => raizRef(empresaId).collection('privado').doc('fiscal')
 export const configFiscalRef = (empresaId: string) => raizRef(empresaId).collection('configuracoes').doc('fiscal')
+/** Credenciais do Serpro, cifradas. /privado é negado a todo cliente pelas regras. */
+export const privadoSerproRef = (empresaId: string) => raizRef(empresaId).collection('privado').doc('serpro')
 export const notasRef = (empresaId: string) => raizRef(empresaId).collection(COL_NOTAS)
 export const notasServicoRef = (empresaId: string) => raizRef(empresaId).collection(COL_NOTAS_SERVICO)
 export const sincronizacoesRef = (empresaId: string) => raizRef(empresaId).collection(COL_SINCRONIZACOES)
@@ -82,6 +84,12 @@ export interface CertificadoGuardado {
   impressaoDigital: string
   enviadoEm: Timestamp
   enviadoPor: string
+}
+
+export interface PrivadoSerpro {
+  consumerKeyCifrada: string
+  consumerSecretCifrada: string
+  atualizadoEm?: Timestamp
 }
 
 export interface PrivadoFiscal {
@@ -164,6 +172,8 @@ export interface ConfiguracaoFiscal {
     notasImportadas?: number
   }
   sincronizacaoNfse?: EstadoSincronizacaoNfse
+  /** Integra Contador (Serpro): só o resumo — key e secret ficam cifradas em /privado/serpro */
+  serpro?: { configurado: boolean; contratante: string; atualizadoEm?: Timestamp }
   /** Numeração própria das NFS-e emitidas por aqui (série de aplicativo próprio, 1–49999) */
   emissao?: { serie: string; proximoNumero: number }
   atualizadoEm: Timestamp
@@ -267,6 +277,9 @@ export type OperacaoAuditada =
   | 'guia_paga'
   | 'guia_excluida'
   | 'recibo_gerado'
+  | 'serpro_configurado'
+  | 'serpro_removido'
+  | 'guia_gerada_receita'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
@@ -384,8 +397,8 @@ export interface Guia {
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
-  /** 'upload' = PDF oficial enviado; 'gerada' = recibo emitido por este sistema */
-  origem: 'upload' | 'gerada'
+  /** 'upload' = PDF oficial enviado; 'serpro' = emitido pela Receita via Integra Contador; 'gerada' = recibo deste sistema */
+  origem: 'upload' | 'serpro' | 'gerada'
   nomeArquivo?: string
   storagePath?: string
   hashPdf?: string

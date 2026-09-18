@@ -131,6 +131,8 @@ export interface ConfiguracaoFiscal {
     notasImportadas?: number
   }
   sincronizacaoNfse?: EstadoSincronizacaoNfse
+  /** Integra Contador (Serpro): só o resumo; key e secret ficam cifradas no servidor */
+  serpro?: { configurado: boolean; contratante: string }
   /** Numeração própria das NFS-e emitidas por aqui */
   emissao?: { serie: string; proximoNumero: number }
   atualizadoEm: Timestamp
@@ -235,6 +237,9 @@ export type OperacaoAuditada =
   | 'guia_paga'
   | 'guia_excluida'
   | 'recibo_gerado'
+  | 'serpro_configurado'
+  | 'serpro_removido'
+  | 'guia_gerada_receita'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -250,6 +255,9 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   guia_paga: 'Pagamento de guia',
   guia_excluida: 'Guia excluída',
   recibo_gerado: 'Recibo de honorários gerado',
+  serpro_configurado: 'Integra Contador configurado',
+  serpro_removido: 'Integra Contador removido',
+  guia_gerada_receita: 'Guia gerada pela Receita',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */
@@ -378,7 +386,7 @@ export interface Guia {
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
-  origem: 'upload' | 'gerada'
+  origem: 'upload' | 'serpro' | 'gerada'
   nomeArquivo?: string
   criadoEm: Timestamp
   atualizadoEm: Timestamp

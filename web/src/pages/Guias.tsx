@@ -12,6 +12,7 @@ import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input,
 import { confirmar } from '../components/Dialogo'
 import { formatBRL } from '../lib/utils'
 import { TIPOS_GUIA, diasAteVencer, formatarLinhaDigitavel, periodoLegivel } from '../lib/guias'
+import { ReceitaCard } from './guias/ReceitaCard'
 import type { ComId, ConfiguracaoHonorarios, Guia, NotaServico } from '../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -110,7 +111,7 @@ function DetalheGuia({
         </div>
         <div>
           <dt className="text-xs text-slate-500 uppercase">Origem</dt>
-          <dd>{guia.origem === 'gerada' ? 'Recibo gerado aqui' : 'PDF oficial enviado'}</dd>
+          <dd>{guia.origem === 'gerada' ? 'Recibo gerado aqui' : guia.origem === 'serpro' ? 'Emitida pela Receita (Integra Contador)' : 'PDF oficial enviado'}</dd>
         </div>
         {guia.observacoes && (
           <div>
@@ -507,6 +508,12 @@ export function Guias() {
           </Card>
         ))}
       </div>
+
+      {ehAdmin && (
+        <div className="mb-4">
+          <ReceitaCard />
+        </div>
+      )}
 
       {ehAdmin && (
         <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
