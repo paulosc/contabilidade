@@ -20,12 +20,12 @@ Repositório: https://github.com/paulosc/contabilidade
 | Acompanhamento na Receita | Baixa automática de guias pagas, cabeçalhos da caixa postal do e-CAC, relatório de situação fiscal | `functions/src/fiscal/serproMonitor.ts` |
 | Documentos | O escritório pede, o cliente envia, a equipe confere; arquivo por competência | `functions/src/escritorio/documentos.ts` |
 | Contabilidade | Extrato OFX, conciliação com regras aprendidas, partidas dobradas, balancete, DRE, encerramento de período | `functions/src/contabil/` |
-| Folha | Cálculo de INSS/IRRF/FGTS por vigência, holerite em PDF, lucros distribuídos por sócio (Lei 15.270/2025) | `functions/src/folha/` |
+| Folha | Cálculo de INSS/IRRF/FGTS por vigência, holerite em PDF, 13º salário, lucros distribuídos por sócio (Lei 15.270/2025) | `functions/src/folha/` |
+| Sandbox · Split payment | Simulador do recolhimento do IBS e da CBS na liquidação financeira (LC 214/2025, arts. 31 a 36); não grava nem envia nada | `functions/src/sandbox/` |
 | Gestão do escritório | Contrato (Resolução CFC 1.590/2020), honorários recorrentes, equipe e acesso do cliente | `functions/src/escritorio/{contrato,gestao,membros}.ts` |
 
 **Não faz, de propósito:** abrir o conteúdo de mensagem da caixa postal do e-CAC (pela API isso dá
-ciência da intimação); calcular 13º, férias e rescisão (falta confirmar em fonte oficial se o
-desconto simplificado vale no 13º); enviar ao eSocial/EFD-Reinf (só pesquisado); consultar FGTS
+ciência da intimação); calcular férias e rescisão; enviar ao eSocial/EFD-Reinf (só pesquisado); consultar FGTS
 Digital, CRF, CNDT e DET (não têm API oficial).
 
 ## Princípios
@@ -113,7 +113,8 @@ firebase functions:secrets:set FISCAL_CRYPTO_KEY
 │       ├── fiscal/       # certificado, NF-e, NFS-e, guias, Serpro
 │       ├── escritorio/   # carteira, obrigações, Simples, documentos, contrato, equipe
 │       ├── contabil/     # OFX, plano de contas, razão, demonstrações
-│       ├── folha/        # tabelas por vigência, cálculo, holerite, lucros
+│       ├── folha/        # tabelas por vigência, cálculo, holerite, 13º, lucros
+│       ├── sandbox/      # estudos isolados: simulador do split payment
 │       ├── providers/    # integrações externas atrás de interfaces
 │       └── triggers/     # espelho das empresas do usuário
 ├── docs/

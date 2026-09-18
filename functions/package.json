@@ -13,7 +13,7 @@
     "serve": "npm run build && firebase emulators:start --only functions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-    "test": "npm run build && node --test \"lib/fiscal/testes/*.test.js\" \"lib/folha/testes/*.test.js\" \"lib/escritorio/testes/*.test.js\" \"lib/contabil/testes/*.test.js\"",
+    "test": "npm run build && node --test \"lib/fiscal/testes/*.test.js\" \"lib/folha/testes/*.test.js\" \"lib/escritorio/testes/*.test.js\" \"lib/contabil/testes/*.test.js\" \"lib/sandbox/testes/*.test.js\"",
     "test:regras": "npm run build && firebase emulators:exec --only firestore \"node --test lib/fiscal/testes/regras.emulador.js\""
   },
   "dependencies": {

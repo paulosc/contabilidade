@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { BookOpen, Briefcase, Building2, FolderOpen, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
+import { BookOpen, Briefcase, Building2, FlaskConical, FolderOpen, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
@@ -19,6 +19,7 @@ const itens = [
   { para: '/contabilidade', rotulo: 'Contabilidade', Icone: BookOpen, fim: undefined, quem: 'equipe' },
   { para: '/guias', rotulo: 'Guias a pagar', Icone: Landmark, fim: undefined, quem: 'todos' },
   { para: '/folha', rotulo: 'Folha de pagamento', Icone: Users, fim: undefined, quem: 'admin' },
+  { para: '/sandbox/split-payment', rotulo: 'Sandbox · Split payment', Icone: FlaskConical, fim: undefined, quem: 'equipe' },
   { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined, quem: 'equipe' },
 ] as const
 

@@ -83,3 +83,4 @@ export {
 } from './contabil'
 export { registrarLucroDistribuido, excluirLucroDistribuido } from './folha/lucrosServico'
 export { decimoTerceiroDoAno } from './folha/decimoTerceiroServico'
+export { simularSplitPayment } from './sandbox'
