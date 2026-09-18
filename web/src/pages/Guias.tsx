@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { doc, limit, orderBy, serverTimestamp, setDoc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { Check, ChevronDown, ChevronUp, Copy, Download, FilePlus2, Landmark, Save, Trash2, Undo2, Upload } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, FilePlus2, Landmark, Save, Trash2, Undo2, Upload } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { db, functions } from '../lib/firebase'
 import { useColecao, useDocumento } from '../services/firestore'
@@ -12,6 +12,7 @@ import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input,
 import { confirmar } from '../components/Dialogo'
 import { formatBRL } from '../lib/utils'
 import { TIPOS_GUIA, diasAteVencer, formatarLinhaDigitavel, periodoLegivel } from '../lib/guias'
+import { AcoesDaGuia } from './guias/AcoesDaGuia'
 import { ReceitaCard } from './guias/ReceitaCard'
 import type { ComId, ConfiguracaoHonorarios, Guia, NotaServico } from '../types'
 
@@ -28,15 +29,6 @@ async function paraBase64(arquivo: File): Promise<string> {
   return btoa(binario)
 }
 
-function baixar(base64: string, nome: string) {
-  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = nome
-  link.click()
-  URL.revokeObjectURL(url)
-}
 
 function SeloVencimento({ guia }: { guia: Guia }) {
   if (guia.status === 'paga') return <Badge tom="verde">Paga</Badge>
@@ -55,7 +47,6 @@ function DetalheGuia({
   receitaDoPeriodo,
   ehAdmin,
   ocupado,
-  aoBaixar,
   aoMarcar,
   aoExcluir,
 }: {
@@ -64,12 +55,12 @@ function DetalheGuia({
   receitaDoPeriodo: number | null
   ehAdmin: boolean
   ocupado: string | null
-  aoBaixar: (g: ComId<Guia>) => void
   aoMarcar: (g: ComId<Guia>, paga: boolean, data?: string) => void
   aoExcluir: (g: ComId<Guia>) => void
 }) {
   const [copiado, setCopiado] = useState(false)
   const [dataPagamento, setDataPagamento] = useState(hoje())
+  const [avisoAcao, setAvisoAcao] = useState<string | null>(null)
 
   async function copiar() {
     if (!guia.linhaDigitavel) return
@@ -153,10 +144,12 @@ function DetalheGuia({
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <Botao tamanho="sm" carregando={ocupado === `pdf-${guia.id}`} onClick={() => aoBaixar(guia)}>
-          <Download className="h-3.5 w-3.5" /> Baixar PDF
-        </Botao>
+      <div className="mt-4">
+        <AcoesDaGuia guia={guia} aoAvisar={(texto) => setAvisoAcao(texto)} />
+        {avisoAcao && <p className="mt-2 text-xs text-slate-600">{avisoAcao}</p>}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-end gap-2">
         {guia.status === 'paga' ? (
           <Botao tamanho="sm" variante="secundario" carregando={ocupado === `pagar-${guia.id}`} onClick={() => aoMarcar(guia, false)}>
             <Undo2 className="h-3.5 w-3.5" /> Desfazer pagamento
@@ -438,17 +431,6 @@ export function Guias() {
     if (entrada.current) entrada.current.value = ''
   }
 
-  async function baixarPdf(g: ComId<Guia>) {
-    setOcupado(`pdf-${g.id}`)
-    try {
-      const r = await httpsCallable<unknown, { pdfBase64: string; nomeArquivo: string }>(functions, 'pdfGuia')({ guiaId: g.id })
-      baixar(r.data.pdfBase64, r.data.nomeArquivo)
-    } catch (e) {
-      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível baixar o PDF.' })
-    } finally {
-      setOcupado(null)
-    }
-  }
 
   async function marcar(g: ComId<Guia>, paga: boolean, dataPagamento?: string) {
     setOcupado(`pagar-${g.id}`)
@@ -605,7 +587,6 @@ export function Guias() {
                             receitaDoPeriodo={g.periodo ? (receitaPorPeriodo.get(g.periodo) ?? null) : null}
                             ehAdmin={ehAdmin}
                             ocupado={ocupado}
-                            aoBaixar={(x) => void baixarPdf(x)}
                             aoMarcar={(x, paga, data) => void marcar(x, paga, data)}
                             aoExcluir={(x) => void excluir(x)}
                           />

@@ -8,7 +8,8 @@ import { functions } from '../../lib/firebase'
 import { useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, Campo, Card, Input } from '../../components/ui'
 import { confirmar } from '../../components/Dialogo'
-import { formatBRL, formatCpfCnpj } from '../../lib/utils'
+import { formatCpfCnpj } from '../../lib/utils'
+import { GuiaPronta } from './AcoesDaGuia'
 import type { ConfiguracaoFiscal } from '../../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -33,8 +34,6 @@ const mesAnterior = () => {
   const d = new Date()
   return new Date(d.getFullYear(), d.getMonth() - 1, 1).toLocaleDateString('en-CA').slice(0, 7)
 }
-
-const dataBr = (iso?: string | null) => (iso ? iso.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1') : '—')
 
 function baixar(base64: string, nome: string) {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
@@ -63,6 +62,8 @@ export function ReceitaCard() {
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [msg, setMsg] = useState<Msg>(null)
+  /** A guia que acabou de sair: vira o painel "guia pronta", com download e WhatsApp */
+  const [pronta, setPronta] = useState<{ id: string; observacoes?: string[] } | null>(null)
   const configurado = Boolean(config?.serpro?.configurado)
   const temCertificado = Boolean(config?.certificado)
 
@@ -109,40 +110,16 @@ export function ReceitaCard() {
     })
   }
 
-  const resumo = (tipo: string, g: GuiaGerada) =>
-    `${tipo} emitido pela Receita${g.valor ? `: ${formatBRL(g.valor)}` : ''}${g.vencimento ? `, pagar até ${dataBr(g.vencimento)}` : ''}${g.nova ? '' : ' (já estava na lista; atualizado)'}. ` +
-    'O PDF foi baixado, e a guia ficou na lista abaixo com a linha digitável para copiar.' +
-    // as observações vêm da própria Receita, às vezes como código curto: rotuladas, para não parecerem texto solto
-    (g.observacoes?.length ? ` Observações da Receita: ${g.observacoes.join(' · ')}.` : '') +
-    (g.avisos.length ? ` ${g.avisos.join(' ')}` : '')
-
-  /** Quem gera a guia quer o PDF na mão: baixa na hora, sem precisar procurar na lista. */
-  async function baixarGuia(guiaId: string) {
-    try {
-      const r = await httpsCallable<unknown, { pdfBase64: string; nomeArquivo: string }>(functions, 'pdfGuia')({ guiaId })
-      baixar(r.data.pdfBase64, r.data.nomeArquivo)
-      return true
-    } catch {
-      return false
-    }
-  }
-
-  async function concluir(tipo: string, r: GuiaGerada) {
-    const baixou = await baixarGuia(r.id)
-    setMsg({
-      tipo: 'sucesso',
-      texto: baixou ? resumo(tipo, r) : resumo(tipo, r).replace('O PDF foi baixado, e a guia ficou', 'Não foi possível baixar o PDF agora, mas a guia ficou'),
-    })
-  }
-
   async function gerarDas(v: FormDas) {
+    setPronta(null)
     const r = await executar<GuiaGerada>('das', 'gerarDasReceita', { periodo: v.periodo })
-    if (r) await concluir('DAS', r)
+    if (r) setPronta({ id: r.id, observacoes: r.observacoes })
   }
 
   async function gerarDarf(v: FormDarf) {
+    setPronta(null)
     const r = await executar<GuiaGerada>('darf', 'gerarDarfReceita', { periodo: v.periodo, numeroRecibo: v.numeroRecibo ? Number(v.numeroRecibo) : undefined })
-    if (r) await concluir('DARF', r)
+    if (r) setPronta({ id: r.id, observacoes: r.observacoes })
   }
 
   async function verDeclaracao() {
@@ -174,6 +151,7 @@ export function ReceitaCard() {
           <Alerta tipo={msg.tipo}>{msg.texto}</Alerta>
         </div>
       )}
+      {pronta && <GuiaPronta guiaId={pronta.id} observacoes={pronta.observacoes} aoFechar={() => setPronta(null)} />}
 
       {!configurado ? (
         <>
@@ -226,8 +204,8 @@ export function ReceitaCard() {
             <Campo label="DARF (DCTFWeb) — competência" className="sm:col-span-2" erro={darf.formState.errors.periodo?.message}>
               <Input type="month" {...darf.register('periodo')} />
             </Campo>
-            <Campo label="Nº do recibo" className="sm:col-span-2" erro={darf.formState.errors.numeroRecibo?.message} dica="Em branco: declaração em andamento">
-              <Input inputMode="numeric" {...darf.register('numeroRecibo')} />
+            <Campo label="Nº do recibo da DCTFWeb (opcional)" className="sm:col-span-2" erro={darf.formState.errors.numeroRecibo?.message}>
+              <Input inputMode="numeric" placeholder="Em branco: declaração em andamento" {...darf.register('numeroRecibo')} />
             </Campo>
             <div className="sm:col-span-2">
               <Botao type="submit" tamanho="sm" carregando={ocupado === 'darf'}>
