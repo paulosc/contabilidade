@@ -18,6 +18,7 @@ import { SefinNacionalClient, resumirErros, type MensagemSefin } from '../provid
 import { assinarXml, materialDoPfx, verificarAssinatura, type MaterialAssinatura } from './assinatura'
 import { decifrar } from './certificado'
 import { agoraBrasilia, lerDpsDeNfse, montarDps, montarPedidoCancelamento, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
+import { regrasDoRegime } from './notaNova'
 import { configFiscalRef, notasServicoRef, privadoFiscalRef, type ConfiguracaoFiscal, type NotaServico, type PrivadoFiscal } from './modelo'
 import { gravarDocumento, type Contadores } from './sincronizacaoNfse'
 
@@ -123,6 +124,8 @@ export async function emitirNfse(
   ambiente: AmbienteNfse,
   uid: string,
 ): Promise<ResultadoEmissao> {
+  // combinações que o SEFIN rejeitaria: melhor um erro claro antes de gastar número de DPS
+  regrasDoRegime(dados)
   const cred = await credenciais(empresaId, chaveMestra, ambiente)
   try {
     const docPrestador = (dados.prestador.cnpj ?? dados.prestador.cpf ?? '').replace(/\D/g, '')

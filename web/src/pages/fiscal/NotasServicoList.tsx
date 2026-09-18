@@ -4,7 +4,7 @@ import { limit, orderBy } from 'firebase/firestore'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { httpsCallable } from 'firebase/functions'
-import { Ban, ChevronDown, ChevronUp, Copy, Download, Eraser, FileDown, Receipt, RefreshCw, Replace, Settings } from 'lucide-react'
+import { Ban, ChevronDown, ChevronUp, Copy, Download, Eraser, FileDown, FilePlus2, Receipt, RefreshCw, Replace, Settings } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useColecao, useDocumento } from '../../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Paginacao, Select, Spinner, Textarea } from '../../components/ui'
@@ -372,6 +372,13 @@ export function NotasServicoList() {
         descricao="NFS-e do padrão nacional em que a empresa é prestadora ou tomadora, buscadas no Ambiente de Dados Nacional."
         acoes={
           <>
+            {membro?.papel === 'admin' && (
+              <Link to="/notas-servico/nova">
+                <Botao>
+                  <FilePlus2 className="h-4 w-4" /> Nova nota
+                </Botao>
+              </Link>
+            )}
             <Botao variante="secundario" carregando={ocupado === 'sincronizar'} onClick={() => void sincronizar()}>
               <RefreshCw className="h-4 w-4" /> Buscar agora
             </Botao>

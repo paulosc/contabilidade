@@ -34,6 +34,7 @@ import { conferirPagamentos, consultarCaixaPostal, emitirSituacaoFiscal, pdfSitu
 import { abrirLinkDaGuia, criarLinkDaGuia } from './guiasServico'
 import { ErroGuia, excluirGuia as excluirGuiaDaEmpresa, gerarRecibo, importarGuia as importarGuiaDaEmpresa, marcarPagamento, pdfDaGuia } from './guiasServico'
 import { ErroDps, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
+import { baseNotaNova } from './notaNova'
 import { ErroEmissao, cancelarNfse as cancelarNfseNoSefin, emitirNfse as emitirNfseNoSefin, modeloDeNota, numeracaoAtual } from './emissao'
 import { logger } from 'firebase-functions'
 import { db, storage } from '../lib/admin'
@@ -747,6 +748,17 @@ export const modeloEmissaoNfse = onCall({ region: REGIAO, timeoutSeconds: 60 }, 
   try {
     const [modelo, numeracao] = await Promise.all([modeloDeNota(id, chaveAcesso), numeracaoAtual(id)])
     return { ...modelo, numeracao }
+  } catch (e) {
+    return traduzirErroEmissao(e)
+  }
+})
+
+/** Base para emitir sem nota-modelo: prestador, município, situação no Simples e sugestões das notas anteriores. */
+export const baseNotaNovaNfse = onCall({ region: REGIAO, timeoutSeconds: 60, memory: '512MiB' }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  try {
+    const [base, numeracao] = await Promise.all([baseNotaNova(id), numeracaoAtual(id)])
+    return { ...base, numeracao }
   } catch (e) {
     return traduzirErroEmissao(e)
   }

@@ -27,6 +27,7 @@ export {
   importarNfseMunicipal,
   diagnosticoNfseNacional,
   modeloEmissaoNfse,
+  baseNotaNovaNfse,
   numeracaoEmissaoNfse,
   emitirNfse,
   cancelarNfse,

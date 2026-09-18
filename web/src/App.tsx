@@ -13,6 +13,7 @@ import { Folha } from './pages/folha/Folha'
 import { NotasFiscaisList } from './pages/fiscal/NotasFiscaisList'
 import { NotasServicoList } from './pages/fiscal/NotasServicoList'
 import { EmitirNotaServico } from './pages/fiscal/EmitirNotaServico'
+import { NovaNotaServico } from './pages/fiscal/NovaNotaServico'
 import { Carteira } from './pages/escritorio/Carteira'
 import { Obrigacoes } from './pages/escritorio/Obrigacoes'
 import { Simples } from './pages/escritorio/Simples'
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="notas-fiscais" element={<NotasFiscaisList />} />
               <Route path="notas-servico" element={<NotasServicoList />} />
               <Route path="notas-servico/emitir" element={<EmitirNotaServico />} />
+              <Route path="notas-servico/nova" element={<NovaNotaServico />} />
               <Route path="carteira" element={<Carteira />} />
               <Route path="obrigacoes" element={<Obrigacoes />} />
               <Route path="simples" element={<Simples />} />
