@@ -12,7 +12,7 @@ import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input,
 import { confirmar } from '../components/Dialogo'
 import { formatBRL } from '../lib/utils'
 import { TIPOS_GUIA, diasAteVencer, formatarLinhaDigitavel, periodoLegivel } from '../lib/guias'
-import { AcoesDaGuia } from './guias/AcoesDaGuia'
+import { AcoesDaGuia, GuiaPronta } from './guias/AcoesDaGuia'
 import { ReceitaCard } from './guias/ReceitaCard'
 import type { ComId, ConfiguracaoHonorarios, Guia, NotaServico } from '../types'
 
@@ -195,12 +195,13 @@ const esquemaRecibo = z.object({
 })
 type FormRecibo = z.infer<typeof esquemaRecibo>
 
-function HonorariosCard({ aoGerar }: { aoGerar: (texto: string) => void }) {
+function HonorariosCard() {
   const { empresa } = useAuth()
   const { dado: config } = useDocumento<ConfiguracaoHonorarios>('configuracoes', 'honorarios')
   const [editando, setEditando] = useState(false)
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  const [pronto, setPronto] = useState<string | null>(null)
 
   const escritorio = useForm<FormEscritorio>({
     resolver: zodResolver(esquemaEscritorio),
@@ -257,13 +258,14 @@ function HonorariosCard({ aoGerar }: { aoGerar: (texto: string) => void }) {
     setOcupado('gerar')
     setErro(null)
     try {
-      const r = await httpsCallable<unknown, { numero: string }>(functions, 'gerarReciboDeHonorarios')({
+      setPronto(null)
+      const r = await httpsCallable<unknown, { id: string; numero: string }>(functions, 'gerarReciboDeHonorarios')({
         competencia: v.competencia,
         valor: Number(v.valor.replace(/\./g, '').replace(',', '.')),
         vencimento: v.vencimento,
         descricao: v.descricao || undefined,
       })
-      aoGerar(`Recibo de honorários nº ${Number(r.data.numero)} gerado e colocado entre as guias a pagar.`)
+      setPronto(r.data.id)
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Não foi possível gerar o recibo.')
     } finally {
@@ -294,6 +296,7 @@ function HonorariosCard({ aoGerar }: { aoGerar: (texto: string) => void }) {
           <Alerta tipo="erro">{erro}</Alerta>
         </div>
       )}
+      {pronto && <GuiaPronta guiaId={pronto} aoFechar={() => setPronto(null)} />}
 
       {(!configurado || editando) && (
         <form onSubmit={escritorio.handleSubmit(salvar)} className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
@@ -303,16 +306,16 @@ function HonorariosCard({ aoGerar }: { aoGerar: (texto: string) => void }) {
           <Campo label="CPF ou CNPJ" className="sm:col-span-3">
             <Input {...escritorio.register('documento')} />
           </Campo>
-          <Campo label="CRC" className="sm:col-span-2">
+          <Campo label="CRC" className="sm:col-span-3">
             <Input placeholder="000.000 - MG" {...escritorio.register('crc')} />
           </Campo>
-          <Campo label="Telefone" className="sm:col-span-2">
+          <Campo label="Telefone" className="sm:col-span-3">
             <Input {...escritorio.register('telefone')} />
           </Campo>
-          <Campo label="Honorário mensal (R$)" className="sm:col-span-1">
+          <Campo label="Honorário mensal (R$)" className="sm:col-span-3">
             <Input inputMode="decimal" {...escritorio.register('valorMensal')} />
           </Campo>
-          <Campo label="Dia do venc." className="sm:col-span-1" erro={escritorio.formState.errors.diaVencimento?.message}>
+          <Campo label="Dia do vencimento" className="sm:col-span-3" erro={escritorio.formState.errors.diaVencimento?.message}>
             <Input inputMode="numeric" {...escritorio.register('diaVencimento')} />
           </Campo>
           <Campo label="Mensagem no recibo" className="sm:col-span-6" erro={escritorio.formState.errors.mensagem?.message}>
@@ -547,7 +550,7 @@ export function Guias() {
               <input ref={entrada} type="file" accept="application/pdf" multiple className="sr-only" disabled={enviando} onChange={(e) => void enviar(e.target.files)} />
             </label>
           </Card>
-          <HonorariosCard aoGerar={(texto) => setMsg({ tipo: 'sucesso', texto })} />
+          <HonorariosCard />
         </div>
       )}
 

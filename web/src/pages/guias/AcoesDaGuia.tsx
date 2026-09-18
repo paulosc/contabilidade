@@ -91,7 +91,8 @@ export function GuiaPronta({ guiaId, observacoes, aoFechar }: { guiaId: string; 
               {TIPOS_GUIA[guia.tipo]} pronto{guia.periodo ? ` — ${periodoLegivel(guia.periodo)}` : ''}
             </p>
             <p className="text-sm text-emerald-900">
-              <strong>{guia.valor !== undefined ? formatBRL(guia.valor) : '—'}</strong> · pagar até <strong>{dataBr(guia.vencimento)}</strong> · emitido agora pela Receita Federal
+              <strong>{guia.valor !== undefined ? formatBRL(guia.valor) : '—'}</strong> · pagar até <strong>{dataBr(guia.vencimento)}</strong> ·{' '}
+              {guia.origem === 'gerada' ? `recibo nº ${Number(guia.numeroDocumento ?? 0)} gerado por este sistema` : 'emitido agora pela Receita Federal'}
             </p>
           </div>
         </div>
@@ -109,8 +110,16 @@ export function GuiaPronta({ guiaId, observacoes, aoFechar }: { guiaId: string; 
       </div>
 
       <p className="mt-3 text-xs text-emerald-800">
-        <strong>Como pagar:</strong> baixe o PDF e use o QR Code do PIX, ou copie a linha digitável no app do banco. A guia também fica guardada na lista abaixo — clique na linha dela
-        para baixar de novo ou marcar como paga.
+        {guia.origem === 'gerada' ? (
+          <>
+            <strong>O que fazer agora:</strong> baixe o PDF ou mande pelo WhatsApp para o cliente. É um recibo, sem código de barras: o pagamento é combinado à parte (PIX, transferência).
+          </>
+        ) : (
+          <>
+            <strong>Como pagar:</strong> baixe o PDF e use o QR Code do PIX, ou copie a linha digitável no app do banco.
+          </>
+        )}{' '}
+        A guia também fica guardada na lista abaixo — clique na linha dela para baixar de novo ou marcar como paga.
       </p>
       {observacoes?.length ? <p className="mt-1 text-xs text-emerald-800">Observações da Receita: {observacoes.join(' · ')}</p> : null}
       {guia.avisos?.length > 0 && <p className="mt-1 text-xs text-amber-800">{guia.avisos.join(' ')}</p>}
