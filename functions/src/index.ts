@@ -82,3 +82,4 @@ export {
   fecharPeriodoContabil,
 } from './contabil'
 export { registrarLucroDistribuido, excluirLucroDistribuido } from './folha/lucrosServico'
+export { decimoTerceiroDoAno } from './folha/decimoTerceiroServico'

@@ -13,6 +13,7 @@ import { formatBRL } from '../../lib/utils'
 import { TIPOS_TRABALHADOR, competenciaLegivel, paraCampo, paraNumero } from '../../lib/folha'
 import { FuncionariosCard } from './FuncionariosCard'
 import { LucrosCard } from './LucrosCard'
+import { DecimoTerceiroCard } from './DecimoTerceiroCard'
 import type { ComId, Folha as FolhaDoMes, Funcionario, Holerite, Rubrica } from '../../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -308,7 +309,7 @@ export function Folha() {
 
       <div className="mb-4">
         <Alerta tipo="info">
-          Esta versão calcula a <strong>folha mensal normal</strong> (salário, adicionais, horas extras, faltas, descontos e pró-labore). <strong>13º salário, férias, rescisão e PLR</strong>{' '}
+          Esta versão calcula a <strong>folha mensal normal</strong> (salário, adicionais, horas extras, faltas, descontos e pró-labore). O <strong>13º salário</strong> tem cálculo próprio, no cartão abaixo. <strong>Férias, rescisão e PLR</strong>{' '}
           têm incidência e tabela próprias e ainda não são calculados aqui.
         </Alerta>
       </div>
@@ -413,6 +414,7 @@ export function Folha() {
       )}
 
       <FuncionariosCard funcionarios={ordenados} />
+      <DecimoTerceiroCard />
       <LucrosCard />
     </>
   )
