@@ -30,6 +30,7 @@ import {
   salvarCredenciais as salvarCredenciaisDoSerpro,
   testar as testarSerproDaEmpresa,
 } from './serproServico'
+import { conferirPagamentos, consultarCaixaPostal, emitirSituacaoFiscal, pdfSituacaoFiscal } from './serproMonitor'
 import { abrirLinkDaGuia, criarLinkDaGuia } from './guiasServico'
 import { ErroGuia, excluirGuia as excluirGuiaDaEmpresa, gerarRecibo, importarGuia as importarGuiaDaEmpresa, marcarPagamento, pdfDaGuia } from './guiasServico'
 import { ErroDps, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
@@ -995,6 +996,55 @@ export const declaracaoPgdasd = onCall({ region: REGIAO, secrets: SEGREDOS_FISCA
     await auditar(id, 'serpro_consulta', req.auth!.uid, { detalhe: `Declaração PGDAS-D ${periodo}` })
     const arquivo = (a?: { nomeArquivo: string; pdf: Buffer }) => (a ? { nomeArquivo: a.nomeArquivo, pdfBase64: a.pdf.toString('base64') } : null)
     return { numeroDeclaracao: d.numeroDeclaracao ?? null, recibo: arquivo(d.recibo), declaracao: arquivo(d.declaracao) }
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+// ---------- acompanhamento na Receita (pagamentos, caixa postal, situação fiscal) ----------
+
+/** Dá baixa nas guias que a Receita já recebeu. Uma consulta tarifada cobre todas as guias em aberto. */
+export const conferirPagamentosReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  try {
+    const r = await conferirPagamentos(id, FISCAL_CRYPTO_KEY.value(), req.auth!.uid)
+    if (r.consultadas > 0) await auditar(id, 'serpro_consulta', req.auth!.uid, { email, detalhe: `Pagamentos: ${r.consultadas} guia(s) consultada(s), ${r.baixadas.length} paga(s)` })
+    for (const b of r.baixadas) await auditar(id, 'guia_paga', req.auth!.uid, { email, detalhe: `${b.guiaId} · confirmada pela Receita em ${b.pagaEm}` })
+    return r
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+/** Cabeçalhos das mensagens da Caixa Postal do e-CAC. Não abre o conteúdo: isso daria ciência da intimação. */
+export const caixaPostalReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  try {
+    const r = await consultarCaixaPostal(id, FISCAL_CRYPTO_KEY.value(), req.auth!.uid)
+    await auditar(id, 'serpro_consulta', req.auth!.uid, { email, detalhe: `Caixa postal: ${r.mensagens.length} mensagem(ns), ${r.naoLidas} não lida(s)` })
+    return r
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+/** Relatório de situação fiscal (o que sustenta a certidão negativa), emitido agora pela Receita. */
+export const situacaoFiscalReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 240, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  try {
+    const r = await emitirSituacaoFiscal(id, FISCAL_CRYPTO_KEY.value(), req.auth!.uid)
+    await auditar(id, 'serpro_emissao', req.auth!.uid, { email, detalhe: `Situação fiscal · ${r.semPendencias ? 'sem pendências' : 'com pendências a conferir'}` })
+    return r
+  } catch (e) {
+    return traduzirErroSerpro(e)
+  }
+})
+
+/** Último relatório de situação fiscal guardado — não consulta a Receita, então não é tarifado. */
+export const pdfSituacaoFiscalGuardado = onCall({ region: REGIAO }, async (req) => {
+  const { id } = await exigirMembro(req.auth?.uid, req.data)
+  try {
+    return await pdfSituacaoFiscal(id)
   } catch (e) {
     return traduzirErroSerpro(e)
   }

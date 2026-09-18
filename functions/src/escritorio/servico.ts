@@ -254,11 +254,13 @@ const diasEntre = (de: string, ate: string) => Math.round((Date.parse(ate) - Dat
 
 async function resumoDaEmpresa(empresaId: string, papel: string, hoje: string): Promise<ResumoDaEmpresa> {
   const mesAtual = hoje.slice(0, 7)
-  const [empresa, config, guiasPendentes, perfilGuardado] = await Promise.all([
+  const [empresa, config, guiasPendentes, perfilGuardado, caixaPostal, situacaoFiscal] = await Promise.all([
     raizRef(empresaId).get(),
     configFiscalRef(empresaId).get(),
     guiasRef(empresaId).where('status', '==', 'pendente').get(),
     lerPerfil(empresaId),
+    raizRef(empresaId).collection('receita').doc('caixaPostal').get(),
+    raizRef(empresaId).collection('receita').doc('situacaoFiscal').get(),
   ])
   const dados = (empresa.data() ?? {}) as { nome?: string; cnpj?: string }
   const pendencias: string[] = []
@@ -288,6 +290,11 @@ async function resumoDaEmpresa(empresaId: string, papel: string, hoje: string): 
   } else {
     pendencias.push('Sem certificado digital')
   }
+
+  // retrato guardado da última consulta à Receita: a carteira não consulta (nem gasta) nada
+  const naoLidas = (caixaPostal.data()?.naoLidas as number | undefined) ?? 0
+  if (naoLidas > 0) pendencias.push(`${naoLidas} ${naoLidas === 1 ? 'mensagem não lida' : 'mensagens não lidas'} no e-CAC`)
+  if (situacaoFiscal.exists && situacaoFiscal.data()?.semPendencias === false) pendencias.push('Situação fiscal com pendência a conferir')
 
   const perfil = perfilCompleto(perfilGuardado)
   let obrigacoes: ResumoDaEmpresa['obrigacoes']

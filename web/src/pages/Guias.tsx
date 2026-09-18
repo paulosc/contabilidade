@@ -14,6 +14,7 @@ import { formatBRL } from '../lib/utils'
 import { TIPOS_GUIA, diasAteVencer, formatarLinhaDigitavel, periodoLegivel } from '../lib/guias'
 import { AcoesDaGuia, GuiaPronta } from './guias/AcoesDaGuia'
 import { ReceitaCard } from './guias/ReceitaCard'
+import { MonitorReceitaCard } from './guias/MonitorReceitaCard'
 import type { ComId, ConfiguracaoHonorarios, Guia, NotaServico } from '../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -148,6 +149,13 @@ function DetalheGuia({
         <AcoesDaGuia guia={guia} aoAvisar={(texto) => setAvisoAcao(texto)} />
         {avisoAcao && <p className="mt-2 text-xs text-slate-600">{avisoAcao}</p>}
       </div>
+
+      {guia.pagamentoConfirmado && (
+        <p className="mt-3 text-xs font-medium text-emerald-700">
+          Pagamento confirmado pela Receita Federal: arrecadado em {guia.pagamentoConfirmado.dataArrecadacao.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1')}
+          {guia.pagamentoConfirmado.valorTotal !== undefined ? ` · ${formatBRL(guia.pagamentoConfirmado.valorTotal)}` : ''}.
+        </p>
+      )}
 
       <div className="mt-3 flex flex-wrap items-end gap-2">
         {guia.status === 'paga' ? (
@@ -602,6 +610,12 @@ export function Guias() {
       {ehAdmin && (
         <div className="mb-4">
           <ReceitaCard />
+        </div>
+      )}
+
+      {ehAdmin && (
+        <div className="mb-4">
+          <MonitorReceitaCard />
         </div>
       )}
 

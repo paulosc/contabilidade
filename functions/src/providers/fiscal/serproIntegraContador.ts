@@ -150,6 +150,73 @@ export const periodoSerpro = (periodo: string): string => {
   return periodo.replace('-', '')
 }
 
+// ---------- pagamentos, caixa postal e situação fiscal (leitura pura) ----------
+
+/** Um documento de arrecadação pago (PAGTOWEB/PAGAMENTOS71). */
+export interface PagamentoReceita {
+  numeroDocumento: string
+  tipo?: string
+  /** 'AAAA-MM-DD' — data contábil da efetivação do pagamento */
+  dataArrecadacao?: string
+  valorTotal?: number
+  codigoReceita?: string
+}
+
+const soData = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : undefined)
+
+export function lerPagamentos(dados: unknown): PagamentoReceita[] {
+  if (!Array.isArray(dados)) return []
+  return dados
+    .map((d) => {
+      const o = (d ?? {}) as Record<string, unknown>
+      const tipo = o.tipo as { descricaoAbreviada?: string; descricao?: string } | undefined
+      const receita = o.receitaPrincipal as { codigo?: string } | undefined
+      return {
+        numeroDocumento: String(o.numeroDocumento ?? '').replace(/\D/g, ''),
+        tipo: tipo?.descricaoAbreviada ?? tipo?.descricao,
+        dataArrecadacao: soData(o.dataArrecadacao),
+        valorTotal: typeof o.valorTotal === 'number' ? o.valorTotal : undefined,
+        codigoReceita: receita?.codigo,
+      }
+    })
+    .filter((x) => x.numeroDocumento)
+}
+
+/** Uma mensagem da Caixa Postal do e-CAC — só o cabeçalho; o conteúdo não é lido por aqui. */
+export interface MensagemCaixaPostal {
+  isn: string
+  assunto: string
+  /** 'AAAA-MM-DD' */
+  enviadaEm?: string
+  lida: boolean
+  /** 'AAAA-MM-DD' — ciência já registrada (pela leitura ou tácita, pelo decurso do prazo) */
+  cienciaEm?: string
+  relevante: boolean
+  origem?: string
+}
+
+export interface CaixaPostal {
+  mensagens: MensagemCaixaPostal[]
+  naoLidas: number
+  temMaisPaginas: boolean
+}
+
+/** O assunto pode trazer o marcador ++VARIAVEL++, a ser trocado por `valorParametroAssunto`. */
+export function lerCaixaPostal(dados: unknown): CaixaPostal {
+  const conteudo = ((dados as { conteudo?: unknown[] })?.conteudo?.[0] ?? dados ?? {}) as Record<string, unknown>
+  const lista = Array.isArray(conteudo.listaMensagens) ? (conteudo.listaMensagens as Array<Record<string, unknown>>) : []
+  const mensagens = lista.map((m) => ({
+    isn: String(m.isn ?? ''),
+    assunto: String(m.assuntoModelo ?? '').replace('++VARIAVEL++', String(m.valorParametroAssunto ?? '')).trim(),
+    enviadaEm: dataIso(String(m.dataEnvio ?? '')),
+    lida: String(m.indicadorLeitura ?? '0') === '1',
+    cienciaEm: dataIso(String(m.dataCiencia ?? '')),
+    relevante: String(m.relevancia ?? '1') === '2',
+    origem: m.descricaoOrigem ? String(m.descricaoOrigem) : undefined,
+  }))
+  return { mensagens, naoLidas: mensagens.filter((m) => !m.lida).length, temMaisPaginas: String(conteudo.indicadorUltimaPagina ?? 'S') === 'N' }
+}
+
 // ---------- cliente ----------
 
 export interface CredenciaisSerpro {
@@ -252,13 +319,14 @@ export class SerproIntegraContador {
   }
 
   /** Uma chamada a um serviço. Em 401, renova o token uma vez e repete. */
-  async chamar<T = unknown>(rota: RotaSerpro, contribuinte: string, idSistema: string, idServico: string, dados: Record<string, unknown>): Promise<RespostaSerpro<T>> {
+  async chamar<T = unknown>(rota: RotaSerpro, contribuinte: string, idSistema: string, idServico: string, dados: Record<string, unknown> | null, versaoSistema = '1.0'): Promise<RespostaSerpro<T>> {
     const pessoa = (doc: string) => ({ numero: doc.replace(/\D/g, ''), tipo: tipoDe(doc) })
     const corpo = JSON.stringify({
       contratante: pessoa(this.cfg.contratante),
       autorPedidoDados: pessoa(this.cfg.autor),
       contribuinte: pessoa(contribuinte),
-      pedidoDados: { idSistema, idServico, versaoSistema: '1.0', dados: JSON.stringify(dados) },
+      // alguns serviços não têm dados de entrada e exigem o campo vazio
+      pedidoDados: { idSistema, idServico, versaoSistema, dados: dados === null ? '' : JSON.stringify(dados) },
     })
     for (let tentativa = 1; ; tentativa++) {
       const t = await this.autenticar(tentativa > 1)
@@ -294,6 +362,47 @@ export class SerproIntegraContador {
     if (numeroReciboEntrega) dados.numeroReciboEntrega = numeroReciboEntrega
     const servico = numeroReciboEntrega ? 'GERARGUIA31' : 'GERARGUIAANDAMENTO313'
     return lerDarfGerado((await this.chamar('Emitir', contribuinte, 'DCTFWEB', servico, dados)).dados)
+  }
+
+  /**
+   * PAGTOWEB/PAGAMENTOS71 — documentos de arrecadação pagos, procurados pelo número (até 100 por
+   * chamada). Uma consulta só responde por todas as guias em aberto.
+   */
+  async pagamentosDosDocumentos(contribuinte: string, numeros: string[]): Promise<PagamentoReceita[]> {
+    const lista = [...new Set(numeros.map((n) => n.replace(/\D/g, '')).filter((n) => n.length > 0 && n.length <= 17))].slice(0, 100)
+    if (!lista.length) return []
+    const r = await this.chamar('Consultar', contribuinte, 'PAGTOWEB', 'PAGAMENTOS71', { numeroDocumentoLista: lista, primeiroDaPagina: 0, tamanhoDaPagina: 100 })
+    return lerPagamentos(r.dados)
+  }
+
+  /**
+   * CAIXAPOSTAL/MSGCONTRIBUINTE61 — cabeçalhos das mensagens mais recentes (até 50).
+   * De propósito NÃO existe aqui o MSGDETALHAMENTO62: abrir o detalhe pela API caracteriza ciência
+   * da intimação (Decreto 70.235/1972, art. 23, § 2º, III). Ler o conteúdo é decisão de quem
+   * responde pela empresa, no e-CAC.
+   */
+  async caixaPostal(contribuinte: string): Promise<CaixaPostal> {
+    const r = await this.chamar('Consultar', contribuinte, 'CAIXAPOSTAL', 'MSGCONTRIBUINTE61', { statusLeitura: '0', indicadorPagina: '0' })
+    return lerCaixaPostal(r.dados)
+  }
+
+  /**
+   * SITFIS — relatório de situação fiscal em PDF. É assíncrono: pede-se o protocolo
+   * (SOLICITARPROTOCOLO91), espera-se o tempo indicado e emite-se (RELATORIOSITFIS92), que pode
+   * responder 202 pedindo mais espera.
+   */
+  async relatorioSituacaoFiscal(contribuinte: string, esperar: (ms: number) => Promise<void> = (ms) => new Promise((ok) => setTimeout(ok, ms))): Promise<Buffer> {
+    const pedido = await this.chamar<{ protocoloRelatorio?: string; tempoEspera?: number }>('Apoiar', contribuinte, 'SITFIS', 'SOLICITARPROTOCOLO91', null, '2.0')
+    const protocolo = pedido.dados?.protocoloRelatorio
+    if (!protocolo) throw new ErroSerpro('A Receita não devolveu o protocolo do relatório de situação fiscal. Tente de novo em alguns minutos.', pedido.httpStatus, pedido.mensagens)
+    let espera = Math.min(Math.max(pedido.dados?.tempoEspera ?? 2000, 1000), 15_000)
+    for (let tentativa = 1; tentativa <= 5; tentativa++) {
+      await esperar(espera)
+      const r = await this.chamar<{ pdf?: string; tempoEspera?: number }>('Emitir', contribuinte, 'SITFIS', 'RELATORIOSITFIS92', { protocoloRelatorio: protocolo }, '2.0')
+      if (r.dados?.pdf) return Buffer.from(r.dados.pdf, 'base64')
+      espera = Math.min(Math.max(r.dados?.tempoEspera ?? 4000, 1000), 15_000)
+    }
+    throw new ErroSerpro('O relatório de situação fiscal ainda não ficou pronto na Receita. Tente de novo em alguns minutos.')
   }
 
   encerrar(): void {

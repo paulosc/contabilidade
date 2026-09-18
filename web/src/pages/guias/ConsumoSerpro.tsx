@@ -10,6 +10,7 @@ import type { RegistroAuditoria } from '../../types'
 const TARIFADAS: Record<string, TipoConsumo> = {
   guia_gerada_receita: 'emissao',
   serpro_consulta: 'consulta',
+  serpro_emissao: 'emissao',
 }
 
 const diaMes = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })

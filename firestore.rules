@@ -87,6 +87,8 @@ service cloud.firestore {
       match /notasServico/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       // guias a pagar: o PDF é lido e gravado pelo backend; a baixa de pagamento também passa por lá
       match /guias/{doc=**}                 { allow read: if ehMembro(empresaId); allow write: if false; }
+      // retrato da empresa na Receita (caixa postal, situação fiscal): só o backend grava
+      match /receita/{doc=**}               { allow read: if ehMembro(empresaId); allow write: if false; }
       // checklist de obrigações: a marcação passa pelo backend, que registra quem marcou
       match /obrigacoes/{doc=**}            { allow read: if ehMembro(empresaId); allow write: if false; }
 

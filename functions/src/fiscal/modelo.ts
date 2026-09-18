@@ -287,6 +287,7 @@ export type OperacaoAuditada =
   | 'folha_reaberta'
   | 'esocial_enviado'
   | 'obrigacao_marcada'
+  | 'serpro_emissao'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
@@ -406,6 +407,8 @@ export interface Guia {
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
+  /** Baixa dada pela consulta de pagamentos da Receita (Integra Contador), não à mão */
+  pagamentoConfirmado?: { fonte: 'receita'; dataArrecadacao: string; valorTotal?: number; conferidoEm: Timestamp }
   /** 'upload' = PDF oficial enviado; 'serpro' = emitido pela Receita via Integra Contador; 'gerada' = recibo deste sistema */
   origem: 'upload' | 'serpro' | 'gerada'
   nomeArquivo?: string

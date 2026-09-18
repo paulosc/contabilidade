@@ -247,6 +247,7 @@ export type OperacaoAuditada =
   | 'folha_reaberta'
   | 'esocial_enviado'
   | 'obrigacao_marcada'
+  | 'serpro_emissao'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -272,6 +273,7 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   folha_reaberta: 'Folha reaberta',
   esocial_enviado: 'Envio ao eSocial',
   obrigacao_marcada: 'Obrigação marcada no checklist',
+  serpro_emissao: 'Emissão de relatório na Receita',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */
@@ -402,6 +404,8 @@ export interface Guia {
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
+  /** Baixa dada pela consulta de pagamentos da Receita */
+  pagamentoConfirmado?: { fonte: 'receita'; dataArrecadacao: string; valorTotal?: number }
   origem: 'upload' | 'serpro' | 'gerada'
   nomeArquivo?: string
   criadoEm: Timestamp

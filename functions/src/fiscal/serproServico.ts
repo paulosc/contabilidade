@@ -55,7 +55,7 @@ interface Sessao {
   contribuinte: string
 }
 
-async function abrirSessao(empresaId: string, chaveMestra: string): Promise<Sessao> {
+export async function abrirSessao(empresaId: string, chaveMestra: string): Promise<Sessao> {
   const [confSnap, privSnap, serproSnap] = await Promise.all([configFiscalRef(empresaId).get(), privadoFiscalRef(empresaId).get(), privadoSerproRef(empresaId).get()])
   const config = confSnap.data() as ConfiguracaoFiscal | undefined
   const privado = privSnap.data() as PrivadoFiscal | undefined
