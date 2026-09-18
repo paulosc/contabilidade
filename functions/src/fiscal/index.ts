@@ -10,6 +10,7 @@ import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { gerarDanfse } from './danfse'
+import { ErroGuia, excluirGuia as excluirGuiaDaEmpresa, gerarRecibo, importarGuia as importarGuiaDaEmpresa, marcarPagamento, pdfDaGuia } from './guiasServico'
 import { ErroDps, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
 import { ErroEmissao, cancelarNfse as cancelarNfseNoSefin, emitirNfse as emitirNfseNoSefin, modeloDeNota, numeracaoAtual } from './emissao'
 import { logger } from 'firebase-functions'
@@ -768,6 +769,80 @@ export const cancelarNfse = onCall(
     }
   },
 )
+
+// ---------- guias a pagar (DAS, DARF, recibo de honorários) ----------
+
+const traduzirErroGuia = (e: unknown): never => {
+  if (e instanceof ErroGuia) throw new HttpsError('failed-precondition', e.message)
+  throw new HttpsError('internal', (e as Error).message)
+}
+
+/** Importa o PDF oficial de uma guia. O sistema lê a guia; quem a emite é a Receita. */
+export const importarGuia = onCall({ region: REGIAO, timeoutSeconds: 120, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const { nomeArquivo, pdfBase64 } = (req.data ?? {}) as { nomeArquivo?: string; pdfBase64?: string }
+  if (!pdfBase64) throw new HttpsError('invalid-argument', 'Envie o PDF da guia')
+  try {
+    const r = await importarGuiaDaEmpresa(id, req.auth!.uid, nomeArquivo ?? 'guia.pdf', Buffer.from(pdfBase64, 'base64'))
+    await auditar(id, 'guia_importada', req.auth!.uid, { email, detalhe: `${r.guia.tipo.toUpperCase()} ${r.guia.numeroDocumento ?? r.id}` })
+    return { id: r.id, nova: r.nova, tipo: r.guia.tipo, valor: r.guia.valor ?? null, vencimento: r.guia.vencimento ?? null, avisos: r.guia.avisos }
+  } catch (e) {
+    return traduzirErroGuia(e)
+  }
+})
+
+export const pdfGuia = onCall({ region: REGIAO, timeoutSeconds: 60 }, async (req) => {
+  const { id } = await exigirMembro(req.auth?.uid, req.data)
+  const { guiaId } = (req.data ?? {}) as { guiaId?: string }
+  if (!guiaId) throw new HttpsError('invalid-argument', 'Informe a guia')
+  try {
+    const { pdf, nomeArquivo } = await pdfDaGuia(id, guiaId)
+    return { nomeArquivo, pdfBase64: pdf.toString('base64') }
+  } catch (e) {
+    return traduzirErroGuia(e)
+  }
+})
+
+/** Baixa de pagamento: qualquer membro da empresa marca (é o cliente quem paga). */
+export const marcarGuiaPaga = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirMembro(req.auth?.uid, req.data)
+  const { guiaId, paga, dataPagamento } = (req.data ?? {}) as { guiaId?: string; paga?: boolean; dataPagamento?: string }
+  if (!guiaId || typeof paga !== 'boolean') throw new HttpsError('invalid-argument', 'Informe a guia e a situação')
+  try {
+    await marcarPagamento(id, req.auth!.uid, guiaId, paga, dataPagamento)
+    await auditar(id, 'guia_paga', req.auth!.uid, { email, detalhe: `${guiaId} → ${paga ? 'paga' : 'pendente'}` })
+    return { ok: true }
+  } catch (e) {
+    return traduzirErroGuia(e)
+  }
+})
+
+export const excluirGuia = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const { guiaId } = (req.data ?? {}) as { guiaId?: string }
+  if (!guiaId) throw new HttpsError('invalid-argument', 'Informe a guia')
+  try {
+    await excluirGuiaDaEmpresa(id, guiaId)
+    await auditar(id, 'guia_excluida', req.auth!.uid, { email, detalhe: guiaId })
+    return { ok: true }
+  } catch (e) {
+    return traduzirErroGuia(e)
+  }
+})
+
+/** Gera o recibo de honorários do escritório — este o sistema emite, é documento próprio. */
+export const gerarReciboDeHonorarios = onCall({ region: REGIAO, timeoutSeconds: 60, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const { competencia, valor, vencimento, descricao } = (req.data ?? {}) as { competencia?: string; valor?: number; vencimento?: string; descricao?: string }
+  if (!competencia || !vencimento || typeof valor !== 'number') throw new HttpsError('invalid-argument', 'Informe competência, valor e vencimento')
+  try {
+    const r = await gerarRecibo(id, req.auth!.uid, { competencia, valor, vencimento, descricao })
+    await auditar(id, 'recibo_gerado', req.auth!.uid, { email, detalhe: `nº ${r.numero} · ${competencia}` })
+    return r
+  } catch (e) {
+    return traduzirErroGuia(e)
+  }
+})
 
 /**
  * Importa as NFS-e antigas direto do web service do município (padrão ABRASF 2.02).

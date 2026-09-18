@@ -1,0 +1,617 @@
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import { doc, limit, orderBy, serverTimestamp, setDoc } from 'firebase/firestore'
+import { httpsCallable } from 'firebase/functions'
+import { Check, ChevronDown, ChevronUp, Copy, Download, FilePlus2, Landmark, Save, Trash2, Undo2, Upload } from 'lucide-react'
+import { useAuth } from '../auth/AuthProvider'
+import { db, functions } from '../lib/firebase'
+import { useColecao, useDocumento } from '../services/firestore'
+import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Select, Spinner } from '../components/ui'
+import { confirmar } from '../components/Dialogo'
+import { formatBRL } from '../lib/utils'
+import { TIPOS_GUIA, diasAteVencer, formatarLinhaDigitavel, periodoLegivel } from '../lib/guias'
+import type { ComId, ConfiguracaoHonorarios, Guia, NotaServico } from '../types'
+
+type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
+
+const hoje = () => new Date().toLocaleDateString('en-CA')
+const dataBr = (iso?: string) => (iso ? iso.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1') : '—')
+
+/** Arquivo → base64, em blocos para não estourar a pilha em PDFs maiores. */
+async function paraBase64(arquivo: File): Promise<string> {
+  const bytes = new Uint8Array(await arquivo.arrayBuffer())
+  let binario = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binario += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binario)
+}
+
+function baixar(base64: string, nome: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = nome
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function SeloVencimento({ guia }: { guia: Guia }) {
+  if (guia.status === 'paga') return <Badge tom="verde">Paga</Badge>
+  const dias = diasAteVencer(guia.vencimento)
+  if (dias === null) return <Badge tom="neutro">Sem vencimento</Badge>
+  if (dias < 0) return <Badge tom="vermelho">Vencida há {-dias} dia(s)</Badge>
+  if (dias === 0) return <Badge tom="vermelho">Vence hoje</Badge>
+  if (dias <= 7) return <Badge tom="amarelo">Vence em {dias} dia(s)</Badge>
+  return <Badge tom="azul">A vencer</Badge>
+}
+
+// ---------- detalhe, aberto na própria linha ----------
+
+function DetalheGuia({
+  guia,
+  receitaDoPeriodo,
+  ehAdmin,
+  ocupado,
+  aoBaixar,
+  aoMarcar,
+  aoExcluir,
+}: {
+  guia: ComId<Guia>
+  /** Soma das NFS-e emitidas na competência da guia — só para conferência do DAS */
+  receitaDoPeriodo: number | null
+  ehAdmin: boolean
+  ocupado: string | null
+  aoBaixar: (g: ComId<Guia>) => void
+  aoMarcar: (g: ComId<Guia>, paga: boolean, data?: string) => void
+  aoExcluir: (g: ComId<Guia>) => void
+}) {
+  const [copiado, setCopiado] = useState(false)
+  const [dataPagamento, setDataPagamento] = useState(hoje())
+
+  async function copiar() {
+    if (!guia.linhaDigitavel) return
+    await navigator.clipboard.writeText(guia.linhaDigitavel)
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2000)
+  }
+
+  return (
+    <div className="border-l-2 border-indigo-400 bg-slate-50/70 px-4 py-4">
+      {guia.avisos?.length > 0 && (
+        <div className="mb-3">
+          <Alerta tipo="info">{guia.avisos.join(' ')}</Alerta>
+        </div>
+      )}
+
+      {guia.linhaDigitavel && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
+          <p className="text-xs text-slate-500 uppercase">Linha digitável</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <code className="font-mono text-sm break-all text-slate-900">{formatarLinhaDigitavel(guia.linhaDigitavel)}</code>
+            <Botao tamanho="sm" variante="secundario" onClick={() => void copiar()}>
+              {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copiado ? 'Copiada' : 'Copiar'}
+            </Botao>
+          </div>
+          {guia.linhaDigitavelValida === false && <p className="mt-1 text-xs text-red-700">Os dígitos verificadores não conferem — use o PDF para pagar.</p>}
+          <p className="mt-1 text-xs text-slate-500">O QR Code do PIX está no PDF.</p>
+        </div>
+      )}
+
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Documento</dt>
+          <dd className="font-mono text-xs">{guia.numeroDocumento ?? '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">{guia.tipo === 'honorarios' ? 'Emitente' : 'Contribuinte'}</dt>
+          <dd>{guia.tipo === 'honorarios' ? (guia.emitente ?? '—') : (guia.contribuinte ?? '—')}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-slate-500 uppercase">Origem</dt>
+          <dd>{guia.origem === 'gerada' ? 'Recibo gerado aqui' : 'PDF oficial enviado'}</dd>
+        </div>
+        {guia.observacoes && (
+          <div>
+            <dt className="text-xs text-slate-500 uppercase">Observações</dt>
+            <dd>{guia.observacoes}</dd>
+          </div>
+        )}
+      </dl>
+
+      {guia.composicao?.length > 0 && (
+        <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-medium tracking-wide text-slate-500 uppercase">
+              <tr>
+                <th className="px-3 py-2">Código</th>
+                <th className="px-3 py-2">Tributo</th>
+                <th className="px-3 py-2 text-right">Principal</th>
+                <th className="px-3 py-2 text-right">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {guia.composicao.map((i) => (
+                <tr key={i.codigo}>
+                  <td className="px-3 py-2 font-mono text-xs">{i.codigo}</td>
+                  <td className="px-3 py-2">{i.denominacao}</td>
+                  <td className="px-3 py-2 text-right">{formatBRL(i.principal)}</td>
+                  <td className="px-3 py-2 text-right">{formatBRL(i.total)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {guia.tipo === 'das' && receitaDoPeriodo !== null && receitaDoPeriodo > 0 && guia.valor && (
+        <p className="mt-3 text-sm text-slate-600">
+          Conferência: as notas de serviço emitidas em {periodoLegivel(guia.periodo)} somam <strong>{formatBRL(receitaDoPeriodo)}</strong>; este DAS corresponde a{' '}
+          <strong>{((guia.valor / receitaDoPeriodo) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</strong> desse valor.
+        </p>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-end gap-2">
+        <Botao tamanho="sm" carregando={ocupado === `pdf-${guia.id}`} onClick={() => aoBaixar(guia)}>
+          <Download className="h-3.5 w-3.5" /> Baixar PDF
+        </Botao>
+        {guia.status === 'paga' ? (
+          <Botao tamanho="sm" variante="secundario" carregando={ocupado === `pagar-${guia.id}`} onClick={() => aoMarcar(guia, false)}>
+            <Undo2 className="h-3.5 w-3.5" /> Desfazer pagamento
+          </Botao>
+        ) : (
+          <>
+            <Campo label="Pago em" className="w-40">
+              <Input type="date" value={dataPagamento} max={hoje()} onChange={(e) => setDataPagamento(e.target.value)} />
+            </Campo>
+            <Botao tamanho="sm" variante="secundario" carregando={ocupado === `pagar-${guia.id}`} onClick={() => aoMarcar(guia, true, dataPagamento)}>
+              <Check className="h-3.5 w-3.5" /> Marcar como paga
+            </Botao>
+          </>
+        )}
+        {ehAdmin && (
+          <Botao tamanho="sm" variante="fantasma" carregando={ocupado === `excluir-${guia.id}`} onClick={() => aoExcluir(guia)}>
+            <Trash2 className="h-3.5 w-3.5" /> Excluir
+          </Botao>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------- honorários: dados do escritório e geração do recibo ----------
+
+const esquemaEscritorio = z.object({
+  nome: z.string().trim().min(3, 'Informe o nome do escritório ou do contador'),
+  documento: z.string().trim(),
+  crc: z.string().trim(),
+  telefone: z.string().trim(),
+  valorMensal: z.string().trim(),
+  diaVencimento: z.string().trim().refine((v) => !v || (Number(v) >= 1 && Number(v) <= 31), 'Dia de 1 a 31'),
+  mensagem: z.string().trim().max(200, 'No máximo 200 caracteres'),
+})
+type FormEscritorio = z.infer<typeof esquemaEscritorio>
+
+const esquemaRecibo = z.object({
+  competencia: z.string().regex(/^\d{4}-\d{2}$/, 'Informe o mês de competência'),
+  valor: z.string().refine((v) => Number(v.replace(/\./g, '').replace(',', '.')) > 0, 'Informe o valor'),
+  vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Informe o vencimento'),
+  descricao: z.string().trim().max(200),
+})
+type FormRecibo = z.infer<typeof esquemaRecibo>
+
+function HonorariosCard({ aoGerar }: { aoGerar: (texto: string) => void }) {
+  const { empresa } = useAuth()
+  const { dado: config } = useDocumento<ConfiguracaoHonorarios>('configuracoes', 'honorarios')
+  const [editando, setEditando] = useState(false)
+  const [ocupado, setOcupado] = useState<string | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+
+  const escritorio = useForm<FormEscritorio>({
+    resolver: zodResolver(esquemaEscritorio),
+    values: {
+      nome: config?.emitente?.nome ?? '',
+      documento: config?.emitente?.documento ?? '',
+      crc: config?.emitente?.crc ?? '',
+      telefone: config?.emitente?.telefone ?? '',
+      valorMensal: config?.valorMensal ? config.valorMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '',
+      diaVencimento: config?.diaVencimento ? String(config.diaVencimento) : '',
+      mensagem: config?.mensagem ?? '',
+    },
+  })
+
+  const mesAtual = new Date().toLocaleDateString('en-CA').slice(0, 7)
+  const recibo = useForm<FormRecibo>({ resolver: zodResolver(esquemaRecibo), defaultValues: { competencia: mesAtual, valor: '', vencimento: '', descricao: '' } })
+
+  // o valor e o vencimento combinados viram a sugestão do próximo recibo
+  useEffect(() => {
+    if (!config) return
+    if (config.valorMensal && !recibo.getValues('valor')) recibo.setValue('valor', config.valorMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }))
+    if (config.diaVencimento && !recibo.getValues('vencimento')) {
+      const agora = new Date()
+      const alvo = new Date(agora.getFullYear(), agora.getMonth() + (agora.getDate() > config.diaVencimento ? 1 : 0), config.diaVencimento)
+      recibo.setValue('vencimento', alvo.toLocaleDateString('en-CA'))
+    }
+  }, [config, recibo])
+
+  async function salvar(v: FormEscritorio) {
+    if (!empresa) return
+    setOcupado('salvar')
+    setErro(null)
+    try {
+      await setDoc(
+        doc(db, 'empresas', empresa.id, 'configuracoes', 'honorarios'),
+        {
+          emitente: { nome: v.nome, documento: v.documento, crc: v.crc, telefone: v.telefone },
+          valorMensal: v.valorMensal ? Number(v.valorMensal.replace(/\./g, '').replace(',', '.')) : null,
+          diaVencimento: v.diaVencimento ? Number(v.diaVencimento) : null,
+          mensagem: v.mensagem,
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true },
+      )
+      setEditando(false)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível salvar.')
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  async function gerar(v: FormRecibo) {
+    setOcupado('gerar')
+    setErro(null)
+    try {
+      const r = await httpsCallable<unknown, { numero: string }>(functions, 'gerarReciboDeHonorarios')({
+        competencia: v.competencia,
+        valor: Number(v.valor.replace(/\./g, '').replace(',', '.')),
+        vencimento: v.vencimento,
+        descricao: v.descricao || undefined,
+      })
+      aoGerar(`Recibo de honorários nº ${Number(r.data.numero)} gerado e colocado entre as guias a pagar.`)
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível gerar o recibo.')
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  const configurado = Boolean(config?.emitente?.nome)
+
+  return (
+    <Card>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <FilePlus2 className="h-4 w-4" /> Recibo de honorários
+        </h2>
+        {configurado && (
+          <Botao tamanho="sm" variante="fantasma" onClick={() => setEditando((v) => !v)}>
+            {editando ? 'Fechar' : 'Dados do escritório'}
+          </Botao>
+        )}
+      </div>
+      <p className="mb-4 text-sm text-slate-500">
+        O recibo é documento do próprio escritório, então este o sistema gera. {configurado ? `Emitente: ${config?.emitente.nome}.` : 'Cadastre os dados do escritório para começar.'}
+      </p>
+
+      {erro && (
+        <div className="mb-3">
+          <Alerta tipo="erro">{erro}</Alerta>
+        </div>
+      )}
+
+      {(!configurado || editando) && (
+        <form onSubmit={escritorio.handleSubmit(salvar)} className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-6">
+          <Campo label="Escritório / contador" className="sm:col-span-3" erro={escritorio.formState.errors.nome?.message} obrigatorio>
+            <Input {...escritorio.register('nome')} />
+          </Campo>
+          <Campo label="CPF ou CNPJ" className="sm:col-span-3">
+            <Input {...escritorio.register('documento')} />
+          </Campo>
+          <Campo label="CRC" className="sm:col-span-2">
+            <Input placeholder="000.000 - MG" {...escritorio.register('crc')} />
+          </Campo>
+          <Campo label="Telefone" className="sm:col-span-2">
+            <Input {...escritorio.register('telefone')} />
+          </Campo>
+          <Campo label="Honorário mensal (R$)" className="sm:col-span-1">
+            <Input inputMode="decimal" {...escritorio.register('valorMensal')} />
+          </Campo>
+          <Campo label="Dia do venc." className="sm:col-span-1" erro={escritorio.formState.errors.diaVencimento?.message}>
+            <Input inputMode="numeric" {...escritorio.register('diaVencimento')} />
+          </Campo>
+          <Campo label="Mensagem no recibo" className="sm:col-span-6" erro={escritorio.formState.errors.mensagem?.message}>
+            <Input placeholder="Pagamento até a data de vencimento." {...escritorio.register('mensagem')} />
+          </Campo>
+          <div className="sm:col-span-6">
+            <Botao type="submit" tamanho="sm" carregando={ocupado === 'salvar'}>
+              <Save className="h-3.5 w-3.5" /> Salvar dados do escritório
+            </Botao>
+          </div>
+        </form>
+      )}
+
+      {configurado && (
+        <form onSubmit={recibo.handleSubmit(gerar)} className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+          <Campo label="Competência" className="sm:col-span-2" erro={recibo.formState.errors.competencia?.message} obrigatorio>
+            <Input type="month" {...recibo.register('competencia')} />
+          </Campo>
+          <Campo label="Valor (R$)" className="sm:col-span-2" erro={recibo.formState.errors.valor?.message} obrigatorio>
+            <Input inputMode="decimal" placeholder="265,00" {...recibo.register('valor')} />
+          </Campo>
+          <Campo label="Vencimento" className="sm:col-span-2" erro={recibo.formState.errors.vencimento?.message} obrigatorio>
+            <Input type="date" {...recibo.register('vencimento')} />
+          </Campo>
+          <Campo label="Descrição" className="sm:col-span-6" dica="Em branco: Honorários contábeis - mês/ano">
+            <Input {...recibo.register('descricao')} />
+          </Campo>
+          <div className="sm:col-span-6">
+            <Botao type="submit" tamanho="sm" carregando={ocupado === 'gerar'}>
+              <FilePlus2 className="h-3.5 w-3.5" /> Gerar recibo
+            </Botao>
+          </div>
+        </form>
+      )}
+    </Card>
+  )
+}
+
+// ---------- página ----------
+
+export function Guias() {
+  const { membro } = useAuth()
+  const ehAdmin = membro?.papel === 'admin'
+  const { dados, carregando, erro } = useColecao<Guia>('guias', [orderBy('criadoEm', 'desc'), limit(400)])
+  const { dados: notas } = useColecao<NotaServico>('notasServico', [orderBy('dataEmissao', 'desc'), limit(500)])
+  const [expandida, setExpandida] = useState<string | null>(null)
+  const [situacao, setSituacao] = useState<'pendentes' | 'pagas' | 'todas'>('pendentes')
+  const [tipo, setTipo] = useState('')
+  const [ocupado, setOcupado] = useState<string | null>(null)
+  const [msg, setMsg] = useState<Msg>(null)
+  const [enviando, setEnviando] = useState(false)
+  const entrada = useRef<HTMLInputElement>(null)
+
+  const ordenadas = useMemo(
+    () => [...dados].sort((a, b) => (a.vencimento ?? '9999').localeCompare(b.vencimento ?? '9999')),
+    [dados],
+  )
+  const visiveis = useMemo(
+    () =>
+      ordenadas
+        .filter((g) => (situacao === 'todas' ? true : situacao === 'pagas' ? g.status === 'paga' : g.status !== 'paga'))
+        .filter((g) => !tipo || g.tipo === tipo)
+        // pagas: a mais recente primeiro; a pagar: a que vence antes primeiro
+        .sort((a, b) => (situacao === 'pagas' ? (b.vencimento ?? '').localeCompare(a.vencimento ?? '') : 0)),
+    [ordenadas, situacao, tipo],
+  )
+
+  const resumo = useMemo(() => {
+    const pendentes = dados.filter((g) => g.status !== 'paga')
+    const soma = (l: Guia[]) => l.reduce((s, g) => s + (g.valor ?? 0), 0)
+    const vencidas = pendentes.filter((g) => (diasAteVencer(g.vencimento) ?? 1) < 0)
+    const semana = pendentes.filter((g) => {
+      const d = diasAteVencer(g.vencimento)
+      return d !== null && d >= 0 && d <= 7
+    })
+    const mes = hoje().slice(0, 7)
+    const pagasNoMes = dados.filter((g) => g.status === 'paga' && g.pagaEm?.toDate?.().toLocaleDateString('en-CA').startsWith(mes))
+    return { aPagar: soma(pendentes), qtdPendentes: pendentes.length, vencidas: soma(vencidas), qtdVencidas: vencidas.length, semana: soma(semana), qtdSemana: semana.length, pagas: soma(pagasNoMes) }
+  }, [dados])
+
+  /** Receita das NFS-e emitidas por competência — só valores que estão nas notas, nada calculado. */
+  const receitaPorPeriodo = useMemo(() => {
+    const mapa = new Map<string, number>()
+    for (const n of notas) {
+      if (n.papel !== 'prestador' || n.status === 'cancelada' || n.ambiente === 'homologacao' || !n.competencia) continue
+      const periodo = n.competencia.slice(0, 7)
+      mapa.set(periodo, (mapa.get(periodo) ?? 0) + (n.valorServico ?? 0))
+    }
+    return mapa
+  }, [notas])
+
+  async function enviar(arquivos: FileList | null) {
+    if (!arquivos?.length) return
+    setEnviando(true)
+    setMsg(null)
+    const linhas: string[] = []
+    let falhas = 0
+    for (const arquivo of Array.from(arquivos)) {
+      try {
+        if (arquivo.size > 7 * 1024 * 1024) throw new Error('arquivo maior que 7 MB')
+        const r = await httpsCallable<unknown, { nova: boolean; tipo: keyof typeof TIPOS_GUIA; valor: number | null; vencimento: string | null; avisos: string[] }>(
+          functions,
+          'importarGuia',
+        )({ nomeArquivo: arquivo.name, pdfBase64: await paraBase64(arquivo) })
+        const d = r.data
+        linhas.push(
+          `${TIPOS_GUIA[d.tipo]}${d.valor ? ` de ${formatBRL(d.valor)}` : ''}${d.vencimento ? `, vence em ${dataBr(d.vencimento)}` : ''}${d.nova ? '' : ' (já estava na lista; atualizada)'}${d.avisos.length ? ' — confira os avisos na guia' : ''}.`,
+        )
+      } catch (e) {
+        falhas++
+        linhas.push(`${arquivo.name}: ${e instanceof Error ? e.message : 'falhou'}`)
+      }
+    }
+    setMsg({ tipo: falhas === arquivos.length ? 'erro' : falhas ? 'info' : 'sucesso', texto: linhas.join(' ') })
+    setEnviando(false)
+    if (entrada.current) entrada.current.value = ''
+  }
+
+  async function baixarPdf(g: ComId<Guia>) {
+    setOcupado(`pdf-${g.id}`)
+    try {
+      const r = await httpsCallable<unknown, { pdfBase64: string; nomeArquivo: string }>(functions, 'pdfGuia')({ guiaId: g.id })
+      baixar(r.data.pdfBase64, r.data.nomeArquivo)
+    } catch (e) {
+      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível baixar o PDF.' })
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  async function marcar(g: ComId<Guia>, paga: boolean, dataPagamento?: string) {
+    setOcupado(`pagar-${g.id}`)
+    try {
+      await httpsCallable(functions, 'marcarGuiaPaga')({ guiaId: g.id, paga, dataPagamento })
+    } catch (e) {
+      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível atualizar a guia.' })
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  async function excluir(g: ComId<Guia>) {
+    const ok = await confirmar(`Excluir a guia ${TIPOS_GUIA[g.tipo]} de ${formatBRL(g.valor ?? 0)}? O PDF guardado também é apagado.`, {
+      titulo: 'Excluir guia',
+      textoConfirmar: 'Excluir',
+      perigo: true,
+    })
+    if (!ok) return
+    setOcupado(`excluir-${g.id}`)
+    try {
+      await httpsCallable(functions, 'excluirGuia')({ guiaId: g.id })
+      setExpandida(null)
+    } catch (e) {
+      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível excluir.' })
+    } finally {
+      setOcupado(null)
+    }
+  }
+
+  return (
+    <>
+      <CabecalhoPagina titulo="Guias a pagar" descricao="DAS, DARF e honorários da empresa: o que vence, quanto é e como pagar." />
+
+      {msg && (
+        <div className="mb-4">
+          <Alerta tipo={msg.tipo}>{msg.texto}</Alerta>
+        </div>
+      )}
+      {erro && (
+        <div className="mb-4">
+          <Alerta tipo="erro">Não foi possível carregar as guias.</Alerta>
+        </div>
+      )}
+
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { rotulo: 'A pagar', valor: formatBRL(resumo.aPagar), detalhe: `${resumo.qtdPendentes} guia(s)`, tom: '' },
+          { rotulo: 'Vencidas', valor: formatBRL(resumo.vencidas), detalhe: `${resumo.qtdVencidas} guia(s)`, tom: resumo.qtdVencidas ? 'text-red-700' : '' },
+          { rotulo: 'Vencem em 7 dias', valor: formatBRL(resumo.semana), detalhe: `${resumo.qtdSemana} guia(s)`, tom: resumo.qtdSemana ? 'text-amber-700' : '' },
+          { rotulo: 'Pagas neste mês', valor: formatBRL(resumo.pagas), detalhe: '', tom: 'text-emerald-700' },
+        ].map((c) => (
+          <Card key={c.rotulo}>
+            <p className="text-xs font-medium tracking-wide text-slate-500 uppercase">{c.rotulo}</p>
+            <p className={`mt-1 text-xl font-semibold ${c.tom}`}>{c.valor}</p>
+            {c.detalhe && <p className="text-xs text-slate-500">{c.detalhe}</p>}
+          </Card>
+        ))}
+      </div>
+
+      {ehAdmin && (
+        <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <Card>
+            <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
+              <Landmark className="h-4 w-4" /> Enviar guias da Receita
+            </h2>
+            <p className="mb-3 text-sm text-slate-500">
+              DAS e DARF só a Receita Federal emite. Envie aqui o PDF que saiu do PGDAS-D ou da DCTFWeb: o sistema lê o vencimento, o valor, a linha digitável e a
+              composição por tributo, e confere se a guia é mesmo desta empresa.
+            </p>
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center transition-colors hover:border-indigo-400 hover:bg-indigo-50/40">
+              {enviando ? <Spinner /> : <Upload className="h-6 w-6 text-slate-400" />}
+              <span className="text-sm font-medium text-slate-700">{enviando ? 'Lendo as guias…' : 'Clique para escolher os PDFs'}</span>
+              <span className="text-xs text-slate-500">Pode enviar vários de uma vez · até 7 MB cada</span>
+              <input ref={entrada} type="file" accept="application/pdf" multiple className="sr-only" disabled={enviando} onChange={(e) => void enviar(e.target.files)} />
+            </label>
+          </Card>
+          <HonorariosCard aoGerar={(texto) => setMsg({ tipo: 'sucesso', texto })} />
+        </div>
+      )}
+
+      <Card className="mb-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-6">
+          <Campo label="Situação" className="sm:col-span-2">
+            <Select value={situacao} onChange={(e) => setSituacao(e.target.value as typeof situacao)}>
+              <option value="pendentes">A pagar</option>
+              <option value="pagas">Pagas</option>
+              <option value="todas">Todas</option>
+            </Select>
+          </Campo>
+          <Campo label="Tipo" className="sm:col-span-2">
+            <Select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+              <option value="">Todos</option>
+              {Object.entries(TIPOS_GUIA).map(([c, t]) => (
+                <option key={c} value={c}>
+                  {t}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+        </div>
+      </Card>
+
+      {carregando ? (
+        <div className="flex justify-center py-16">
+          <Spinner />
+        </div>
+      ) : dados.length === 0 ? (
+        <EstadoVazio titulo="Nenhuma guia ainda" descricao={ehAdmin ? 'Envie o PDF de um DAS ou DARF, ou gere um recibo de honorários.' : 'Quando o escritório enviar uma guia, ela aparece aqui.'} />
+      ) : visiveis.length === 0 ? (
+        <EstadoVazio titulo="Nada nesta situação" descricao="Troque o filtro para ver as outras guias." />
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-medium tracking-wide text-slate-500 uppercase">
+              <tr>
+                <th className="px-4 py-3">Guia</th>
+                <th className="px-4 py-3">Competência</th>
+                <th className="px-4 py-3">Vencimento</th>
+                <th className="px-4 py-3 text-right">Valor</th>
+                <th className="px-4 py-3">Situação</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {visiveis.map((g) => {
+                const aberta = expandida === g.id
+                return (
+                  <Fragment key={g.id}>
+                    <tr className={`cursor-pointer ${aberta ? 'bg-indigo-50/60' : 'hover:bg-slate-50'}`} onClick={() => setExpandida(aberta ? null : g.id)}>
+                      <td className="px-4 py-3">
+                        <span className="font-medium text-slate-900">{TIPOS_GUIA[g.tipo]}</span>
+                        {g.descricao && <span className="mt-0.5 block text-xs text-slate-500">{g.descricao}</span>}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{periodoLegivel(g.periodo)}</td>
+                      <td className="px-4 py-3 text-slate-600">{dataBr(g.vencimento)}</td>
+                      <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{g.valor !== undefined ? formatBRL(g.valor) : '—'}</td>
+                      <td className="px-4 py-3">
+                        <SeloVencimento guia={g} />
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-400">{aberta ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />}</td>
+                    </tr>
+                    {aberta && (
+                      <tr>
+                        <td colSpan={6} className="p-0">
+                          <DetalheGuia
+                            guia={g}
+                            receitaDoPeriodo={g.periodo ? (receitaPorPeriodo.get(g.periodo) ?? null) : null}
+                            ehAdmin={ehAdmin}
+                            ocupado={ocupado}
+                            aoBaixar={(x) => void baixarPdf(x)}
+                            aoMarcar={(x, paga, data) => void marcar(x, paga, data)}
+                            aoExcluir={(x) => void excluir(x)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}

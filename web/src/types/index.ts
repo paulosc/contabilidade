@@ -231,6 +231,10 @@ export type OperacaoAuditada =
   | 'xml_baixado'
   | 'nfse_emitida'
   | 'nfse_cancelada'
+  | 'guia_importada'
+  | 'guia_paga'
+  | 'guia_excluida'
+  | 'recibo_gerado'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -242,6 +246,10 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   xml_baixado: 'XML baixado',
   nfse_emitida: 'NFS-e emitida',
   nfse_cancelada: 'NFS-e cancelada',
+  guia_importada: 'Guia importada',
+  guia_paga: 'Pagamento de guia',
+  guia_excluida: 'Guia excluída',
+  recibo_gerado: 'Recibo de honorários gerado',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */
@@ -340,4 +348,47 @@ export interface NotaServico {
   importadoEm: Timestamp
   criadoEm: Timestamp
   atualizadoEm: Timestamp
+}
+
+// ---------- guias a pagar (DAS, DARF, honorários) ----------
+
+export type TipoGuia = 'das' | 'darf' | 'honorarios' | 'outro'
+
+/** /empresas/{id}/guias/{id} — gravada só pelo backend */
+export interface Guia {
+  tipo: TipoGuia
+  numeroDocumento?: string
+  documentoContribuinte?: string
+  contribuinte?: string
+  /** 'AAAA-MM' */
+  periodo?: string
+  /** 'AAAA-MM-DD' */
+  vencimento?: string
+  vencimentoEm?: Timestamp
+  emissao?: string
+  valor?: number
+  linhaDigitavel?: string
+  codigoBarras?: string
+  linhaDigitavelValida?: boolean
+  composicao: Array<{ codigo: string; denominacao: string; principal: number; total: number }>
+  descricao?: string
+  emitente?: string
+  observacoes?: string
+  avisos: string[]
+  status: 'pendente' | 'paga'
+  pagaEm?: Timestamp
+  pagaPor?: string
+  origem: 'upload' | 'gerada'
+  nomeArquivo?: string
+  criadoEm: Timestamp
+  atualizadoEm: Timestamp
+}
+
+/** /empresas/{id}/configuracoes/honorarios */
+export interface ConfiguracaoHonorarios {
+  emitente: { nome: string; documento?: string; crc?: string; telefone?: string }
+  valorMensal?: number | null
+  diaVencimento?: number | null
+  mensagem?: string
+  proximoNumero?: number
 }

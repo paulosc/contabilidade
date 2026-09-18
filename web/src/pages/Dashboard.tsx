@@ -7,10 +7,12 @@ import { useColecao, useDocumento } from '../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Card, EstadoVazio, Spinner } from '../components/ui'
 import { formatBRL, formatCpfCnpj, formatData } from '../lib/utils'
 import { diasAte, nsuLegivel } from '../lib/fiscal'
+import { TIPOS_GUIA, diasAteVencer } from '../lib/guias'
 import {
   SITUACOES_SYNC_FISCAL,
   STATUS_NOTA_FISCAL,
   type ConfiguracaoFiscal,
+  type Guia,
   type NotaFiscal,
 } from '../types'
 
@@ -28,6 +30,16 @@ export function Dashboard() {
   const { empresa } = useAuth()
   const { dado: config } = useDocumento<ConfiguracaoFiscal>('configuracoes', 'fiscal')
   const { dados: notas, carregando } = useColecao<NotaFiscal>('notasFiscais', [orderBy('dataEmissao', 'desc'), limit(100)])
+
+  const { dados: guias } = useColecao<Guia>('guias', [orderBy('criadoEm', 'desc'), limit(200)])
+  // o que está para vencer (ou já venceu) e ainda não foi pago
+  const guiasUrgentes = useMemo(
+    () =>
+      guias
+        .filter((g) => g.status !== 'paga' && (diasAteVencer(g.vencimento) ?? 99) <= 7)
+        .sort((a, b) => (a.vencimento ?? '').localeCompare(b.vencimento ?? '')),
+    [guias],
+  )
 
   const sync = config?.sincronizacao
   const validoAte = config?.certificado?.validoAte?.toDate?.()
@@ -82,6 +94,25 @@ export function Dashboard() {
                 ? `Certificado digital vencido em ${formatData(config?.certificado?.validoAte)}. A sincronização está parada.`
                 : `O certificado digital vence em ${diasRestantes} dia(s) (${formatData(config?.certificado?.validoAte)}).`}
             </span>
+          </Alerta>
+        </div>
+      )}
+
+      {guiasUrgentes.length > 0 && (
+        <div className="mb-4">
+          <Alerta tipo={guiasUrgentes.some((g) => (diasAteVencer(g.vencimento) ?? 0) < 0) ? 'erro' : 'info'}>
+            <span className="font-medium">Guias para pagar: </span>
+            {guiasUrgentes
+              .slice(0, 4)
+              .map((g) => {
+                const d = diasAteVencer(g.vencimento) ?? 0
+                return `${TIPOS_GUIA[g.tipo]} de ${formatBRL(g.valor ?? 0)} (${d < 0 ? `vencida há ${-d} dia(s)` : d === 0 ? 'vence hoje' : `vence em ${d} dia(s)`})`
+              })
+              .join(' · ')}
+            {guiasUrgentes.length > 4 ? ` · e mais ${guiasUrgentes.length - 4}` : ''}.{' '}
+            <Link to="/guias" className="font-medium underline">
+              Ver guias
+            </Link>
           </Alerta>
         </div>
       )}

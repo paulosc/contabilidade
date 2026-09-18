@@ -30,6 +30,11 @@ export {
   numeracaoEmissaoNfse,
   emitirNfse,
   cancelarNfse,
+  importarGuia,
+  pdfGuia,
+  marcarGuiaPaga,
+  excluirGuia,
+  gerarReciboDeHonorarios,
   salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'

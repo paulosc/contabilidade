@@ -80,6 +80,8 @@ service cloud.firestore {
       match /notasFiscais/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       // NFS-e: mesmas garantias da NF-e, baixadas do ADN pelo backend
       match /notasServico/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
+      // guias a pagar: o PDF é lido e gravado pelo backend; a baixa de pagamento também passa por lá
+      match /guias/{doc=**}                 { allow read: if ehMembro(empresaId); allow write: if false; }
       match /sincronizacoesFiscais/{doc=**} { allow read: if ehMembro(empresaId); allow write: if false; }
       match /auditoriaFiscal/{doc=**}       { allow read: if ehAdmin(empresaId);  allow write: if false; }
     }

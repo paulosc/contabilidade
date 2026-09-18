@@ -28,6 +28,11 @@ export const notasRef = (empresaId: string) => raizRef(empresaId).collection(COL
 export const notasServicoRef = (empresaId: string) => raizRef(empresaId).collection(COL_NOTAS_SERVICO)
 export const sincronizacoesRef = (empresaId: string) => raizRef(empresaId).collection(COL_SINCRONIZACOES)
 export const auditoriaRef = (empresaId: string) => raizRef(empresaId).collection(COL_AUDITORIA)
+export const guiasRef = (empresaId: string) => raizRef(empresaId).collection('guias')
+export const configHonorariosRef = (empresaId: string) => raizRef(empresaId).collection('configuracoes').doc('honorarios')
+/** PDF de uma guia, sempre dentro da pasta da empresa. O id já é higienizado (dígitos, letras e hífen). */
+export const caminhoGuia = (empresaId: string, guiaId: string): string =>
+  `empresas/${empresaId}/guias/${guiaId.replace(/[^A-Za-z0-9-]/g, '')}.pdf`
 
 /** Caminho do XML da NFS-e no Storage (chave de 50 dígitos; a competência organiza as pastas). */
 export function caminhoXmlServico(empresaId: string, chave: string, sufixo: string): string {
@@ -258,6 +263,10 @@ export type OperacaoAuditada =
   | 'xml_baixado'
   | 'nfse_emitida'
   | 'nfse_cancelada'
+  | 'guia_importada'
+  | 'guia_paga'
+  | 'guia_excluida'
+  | 'recibo_gerado'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
@@ -345,4 +354,52 @@ export function resolverCaminhoXmlServico(
   )
   if (pedido) return permitidos.includes(pedido) ? pedido : null
   return permitidos[0] ?? null
+}
+
+// ---------- guias a pagar (DAS, DARF, honorários) ----------
+
+export type TipoGuia = 'das' | 'darf' | 'honorarios' | 'outro'
+
+/** /empresas/{id}/guias/{id} — escrita só pelo backend */
+export interface Guia {
+  tipo: TipoGuia
+  numeroDocumento?: string
+  documentoContribuinte?: string
+  contribuinte?: string
+  /** 'AAAA-MM' */
+  periodo?: string
+  /** 'AAAA-MM-DD' */
+  vencimento?: string
+  vencimentoEm?: Timestamp
+  emissao?: string
+  valor?: number
+  linhaDigitavel?: string
+  codigoBarras?: string
+  linhaDigitavelValida?: boolean
+  composicao: Array<{ codigo: string; denominacao: string; principal: number; total: number }>
+  descricao?: string
+  emitente?: string
+  observacoes?: string
+  avisos: string[]
+  status: 'pendente' | 'paga'
+  pagaEm?: Timestamp
+  pagaPor?: string
+  /** 'upload' = PDF oficial enviado; 'gerada' = recibo emitido por este sistema */
+  origem: 'upload' | 'gerada'
+  nomeArquivo?: string
+  storagePath?: string
+  hashPdf?: string
+  criadoPor: string
+  criadoEm: Timestamp
+  atualizadoEm: Timestamp
+}
+
+/** /empresas/{id}/configuracoes/honorarios — o admin edita pela tela */
+export interface ConfiguracaoHonorarios {
+  emitente: { nome: string; documento?: string; crc?: string; telefone?: string }
+  valorMensal?: number
+  diaVencimento?: number
+  mensagem?: string
+  proximoNumero?: number
+  atualizadoEm?: Timestamp
 }
