@@ -11,6 +11,17 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { gerarDanfse } from './danfse'
 import {
+  ErroFolha,
+  ErroTabela,
+  calcularFolha,
+  calcularHoleriteDoFuncionario,
+  fecharFolha,
+  garantirRubricas,
+  pdfDoHolerite,
+  reabrirFolha,
+  removerHolerite,
+} from '../folha/folhaServico'
+import {
   ErroSerpro,
   declaracaoDoPeriodo,
   gerarDarf as gerarDarfNaReceita,
@@ -933,6 +944,87 @@ export const declaracaoPgdasd = onCall({ region: REGIAO, secrets: SEGREDOS_FISCA
     return { numeroDeclaracao: d.numeroDeclaracao ?? null, recibo: arquivo(d.recibo), declaracao: arquivo(d.declaracao) }
   } catch (e) {
     return traduzirErroSerpro(e)
+  }
+})
+
+// ---------- folha de pagamento ----------
+
+const traduzirErroFolha = (e: unknown): never => {
+  if (e instanceof ErroFolha || e instanceof ErroTabela) throw new HttpsError('failed-precondition', e.message)
+  throw new HttpsError('internal', (e as Error).message)
+}
+
+const competenciaDoPedido = (dados: unknown): string => {
+  const c = (dados as { competencia?: unknown })?.competencia
+  if (typeof c !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(c)) throw new HttpsError('invalid-argument', 'Informe a competência (AAAA-MM)')
+  return c
+}
+
+/** Cria as rubricas padrão da empresa (códigos de natureza da Tabela 03 do eSocial). */
+export const prepararFolha = onCall({ region: REGIAO }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  return { rubricasCriadas: await garantirRubricas(id) }
+})
+
+/** Calcula a folha da competência. Com `funcionarioId`, só aquele holerite — com os lançamentos enviados. */
+export const calcularFolhaDoMes = onCall({ region: REGIAO, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const competencia = competenciaDoPedido(req.data)
+  const { funcionarioId, lancamentos } = (req.data ?? {}) as { funcionarioId?: string; lancamentos?: Array<{ codigo: string; valor: number; referencia?: string }> }
+  try {
+    if (funcionarioId) {
+      const h = await calcularHoleriteDoFuncionario(id, req.auth!.uid, competencia, funcionarioId, Array.isArray(lancamentos) ? lancamentos : undefined)
+      return { calculados: 1, erros: [], liquido: h.resultado.liquido, avisos: h.resultado.avisos }
+    }
+    const r = await calcularFolha(id, req.auth!.uid, competencia)
+    await auditar(id, 'folha_calculada', req.auth!.uid, { email, detalhe: `${competencia} · ${r.calculados} holerite(s)` })
+    return { ...r, avisos: [] }
+  } catch (e) {
+    return traduzirErroFolha(e)
+  }
+})
+
+export const removerHoleriteDaFolha = onCall({ region: REGIAO }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  const competencia = competenciaDoPedido(req.data)
+  const { funcionarioId } = (req.data ?? {}) as { funcionarioId?: string }
+  if (!funcionarioId) throw new HttpsError('invalid-argument', 'Informe o funcionário')
+  try {
+    await removerHolerite(id, competencia, funcionarioId)
+    return { ok: true }
+  } catch (e) {
+    return traduzirErroFolha(e)
+  }
+})
+
+export const fecharFolhaDoMes = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const competencia = competenciaDoPedido(req.data)
+  const { reabrir } = (req.data ?? {}) as { reabrir?: boolean }
+  try {
+    if (reabrir) {
+      await reabrirFolha(id, competencia)
+      await auditar(id, 'folha_reaberta', req.auth!.uid, { email, detalhe: competencia })
+    } else {
+      await fecharFolha(id, req.auth!.uid, competencia)
+      await auditar(id, 'folha_fechada', req.auth!.uid, { email, detalhe: competencia })
+    }
+    return { ok: true }
+  } catch (e) {
+    return traduzirErroFolha(e)
+  }
+})
+
+export const pdfHolerite = onCall({ region: REGIAO, timeoutSeconds: 60, memory: '512MiB' }, async (req) => {
+  const { id } = await exigirAdmin(req.auth?.uid, req.data)
+  const competencia = competenciaDoPedido(req.data)
+  const { funcionarioId } = (req.data ?? {}) as { funcionarioId?: string }
+  if (!funcionarioId) throw new HttpsError('invalid-argument', 'Informe o funcionário')
+  try {
+    const { pdf, nomeArquivo } = await pdfDoHolerite(id, competencia, funcionarioId)
+    return { nomeArquivo, pdfBase64: pdf.toString('base64') }
+  } catch (e) {
+    return traduzirErroFolha(e)
   }
 })
 

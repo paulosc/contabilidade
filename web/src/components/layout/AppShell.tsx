@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { Building2, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, X } from 'lucide-react'
+import { Building2, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
@@ -12,6 +12,7 @@ const itens = [
   { para: '/notas-fiscais', rotulo: 'Notas fiscais (NF-e)', Icone: ScanLine, fim: undefined },
   { para: '/notas-servico', rotulo: 'Notas de serviço', Icone: FileSpreadsheet, fim: undefined },
   { para: '/guias', rotulo: 'Guias a pagar', Icone: Landmark, fim: undefined },
+  { para: '/folha', rotulo: 'Folha de pagamento', Icone: Users, fim: undefined },
   { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined },
 ]
 

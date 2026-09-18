@@ -41,6 +41,11 @@ export {
   gerarDasReceita,
   gerarDarfReceita,
   declaracaoPgdasd,
+  prepararFolha,
+  calcularFolhaDoMes,
+  removerHoleriteDaFolha,
+  fecharFolhaDoMes,
+  pdfHolerite,
   salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'

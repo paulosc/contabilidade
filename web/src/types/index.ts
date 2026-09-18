@@ -240,6 +240,10 @@ export type OperacaoAuditada =
   | 'serpro_configurado'
   | 'serpro_removido'
   | 'guia_gerada_receita'
+  | 'folha_calculada'
+  | 'folha_fechada'
+  | 'folha_reaberta'
+  | 'esocial_enviado'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -258,6 +262,10 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   serpro_configurado: 'Integra Contador configurado',
   serpro_removido: 'Integra Contador removido',
   guia_gerada_receita: 'Guia gerada pela Receita',
+  folha_calculada: 'Folha calculada',
+  folha_fechada: 'Folha fechada',
+  folha_reaberta: 'Folha reaberta',
+  esocial_enviado: 'Envio ao eSocial',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */
@@ -399,4 +407,74 @@ export interface ConfiguracaoHonorarios {
   diaVencimento?: number | null
   mensagem?: string
   proximoNumero?: number
+}
+
+// ---------- folha de pagamento ----------
+
+export type TipoTrabalhador = 'empregado' | 'aprendiz' | 'prolabore'
+export type TipoRubrica = 'provento' | 'desconto' | 'informativa'
+
+/** /empresas/{id}/funcionarios/{id} — só administradores leem e escrevem */
+export interface Funcionario {
+  nome: string
+  cpf: string
+  dataNascimento?: string | null
+  tipo: TipoTrabalhador
+  cargo: string
+  cbo?: string | null
+  salarioBase: number
+  dataAdmissao: string
+  dataDesligamento?: string | null
+  dependentesIrrf: number
+  matricula?: string | null
+  categoriaEsocial?: number
+  ativo: boolean
+}
+
+export interface Rubrica {
+  codigo: string
+  descricao: string
+  tipo: TipoRubrica
+  incideInss: boolean
+  incideIrrf: boolean
+  incideFgts: boolean
+  natureza?: string
+  padrao?: boolean
+}
+
+export interface LancamentoFolha {
+  codigo: string
+  descricao: string
+  tipo: TipoRubrica
+  valor: number
+  referencia?: string
+}
+
+export interface ResultadoHolerite {
+  totalProventos: number
+  totalDescontos: number
+  liquido: number
+  baseInss: number
+  inss: number
+  irrf: { base: number; metodo: 'simplificado' | 'deducoes-legais'; impostoPelaTabela: number; reducao: number; valor: number; aliquota: number }
+  baseFgts: number
+  fgts: number
+  linhas: LancamentoFolha[]
+  tabelas: { inss: string; irrf: string }
+  avisos: string[]
+}
+
+/** /empresas/{id}/folhas/{AAAA-MM}/holerites/{funcionarioId} — gravado só pelo backend */
+export interface Holerite {
+  funcionarioId: string
+  competencia: string
+  lancamentos: LancamentoFolha[]
+  resultado: ResultadoHolerite
+}
+
+/** /empresas/{id}/folhas/{AAAA-MM} */
+export interface Folha {
+  competencia: string
+  status: 'aberta' | 'fechada'
+  totais?: { funcionarios: number; proventos: number; descontos: number; liquido: number; inss: number; irrf: number; fgts: number }
 }

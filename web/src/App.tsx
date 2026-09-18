@@ -9,6 +9,7 @@ import { Onboarding } from './pages/Onboarding'
 import { Dashboard } from './pages/Dashboard'
 import { Configuracoes } from './pages/Configuracoes'
 import { Guias } from './pages/Guias'
+import { Folha } from './pages/folha/Folha'
 import { NotasFiscaisList } from './pages/fiscal/NotasFiscaisList'
 import { NotasServicoList } from './pages/fiscal/NotasServicoList'
 import { EmitirNotaServico } from './pages/fiscal/EmitirNotaServico'
@@ -35,6 +36,7 @@ export default function App() {
               <Route path="notas-servico" element={<NotasServicoList />} />
               <Route path="notas-servico/emitir" element={<EmitirNotaServico />} />
               <Route path="guias" element={<Guias />} />
+              <Route path="folha" element={<Folha />} />
               <Route path="configuracoes" element={<Configuracoes />} />
             </Route>
           </Route>

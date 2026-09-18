@@ -280,6 +280,10 @@ export type OperacaoAuditada =
   | 'serpro_configurado'
   | 'serpro_removido'
   | 'guia_gerada_receita'
+  | 'folha_calculada'
+  | 'folha_fechada'
+  | 'folha_reaberta'
+  | 'esocial_enviado'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
