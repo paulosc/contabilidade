@@ -380,8 +380,32 @@ export function Guias() {
     [ordenadas, situacao, tipo],
   )
 
+  /**
+   * Guias em aberto que cobram o MESMO débito: mesmo tipo, competência e valor, com números de
+   * documento diferentes. Acontece quando a guia é emitida de novo (cada emissão ganha um número
+   * novo) — pagar as duas é pagar o imposto em dobro.
+   */
+  const duplicadas = useMemo(() => {
+    const grupos = new Map<string, ComId<Guia>[]>()
+    for (const g of dados) {
+      if (g.status === 'paga' || (g.tipo !== 'das' && g.tipo !== 'darf') || !g.periodo || g.valor === undefined) continue
+      const chave = `${g.tipo}|${g.periodo}|${g.valor.toFixed(2)}|${g.composicao?.[0]?.codigo ?? ''}`
+      grupos.set(chave, [...(grupos.get(chave) ?? []), g])
+    }
+    return new Set([...grupos.values()].filter((l) => l.length > 1).flat().map((g) => g.id))
+  }, [dados])
+
   const resumo = useMemo(() => {
-    const pendentes = dados.filter((g) => g.status !== 'paga')
+    // o mesmo débito emitido duas vezes conta uma vez só no que há a pagar
+    const vistos = new Set<string>()
+    const pendentes = dados.filter((g) => {
+      if (g.status === 'paga') return false
+      if (!duplicadas.has(g.id)) return true
+      const chave = `${g.tipo}|${g.periodo}|${g.valor?.toFixed(2)}`
+      if (vistos.has(chave)) return false
+      vistos.add(chave)
+      return true
+    })
     const soma = (l: Guia[]) => l.reduce((s, g) => s + (g.valor ?? 0), 0)
     const vencidas = pendentes.filter((g) => (diasAteVencer(g.vencimento) ?? 1) < 0)
     const semana = pendentes.filter((g) => {
@@ -391,7 +415,7 @@ export function Guias() {
     const mes = hoje().slice(0, 7)
     const pagasNoMes = dados.filter((g) => g.status === 'paga' && g.pagaEm?.toDate?.().toLocaleDateString('en-CA').startsWith(mes))
     return { aPagar: soma(pendentes), qtdPendentes: pendentes.length, vencidas: soma(vencidas), qtdVencidas: vencidas.length, semana: soma(semana), qtdSemana: semana.length, pagas: soma(pagasNoMes) }
-  }, [dados])
+  }, [dados, duplicadas])
 
   /** Receita das NFS-e emitidas por competência — só valores que estão nas notas, nada calculado. */
   const receitaPorPeriodo = useMemo(() => {
@@ -473,6 +497,15 @@ export function Guias() {
       {erro && (
         <div className="mb-4">
           <Alerta tipo="erro">Não foi possível carregar as guias.</Alerta>
+        </div>
+      )}
+
+      {duplicadas.size > 0 && (
+        <div className="mb-4">
+          <Alerta tipo="erro">
+            <strong>Atenção: há {duplicadas.size} guias em aberto para o mesmo débito.</strong> Quando uma guia é emitida de novo, a Receita dá a ela um número novo — mas o imposto é o
+            mesmo. Pague <strong>só uma</strong> e marque-a como paga; depois exclua a outra (ou marque também, para ela sair da lista). Elas estão sinalizadas abaixo.
+          </Alerta>
         </div>
       )}
 
@@ -576,6 +609,11 @@ export function Guias() {
                       <td className="px-4 py-3 text-right font-medium whitespace-nowrap">{g.valor !== undefined ? formatBRL(g.valor) : '—'}</td>
                       <td className="px-4 py-3">
                         <SeloVencimento guia={g} />
+                        {duplicadas.has(g.id) && (
+                          <span className="mt-1 block">
+                            <Badge tom="vermelho">Mesmo débito de outra guia</Badge>
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-400">{aberta ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />}</td>
                     </tr>
