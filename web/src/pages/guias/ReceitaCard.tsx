@@ -119,7 +119,8 @@ export function ReceitaCard() {
 
   async function gerarDarf(v: FormDarf) {
     setPronta(null)
-    const r = await executar<GuiaGerada>('darf', 'gerarDarfReceita', { periodo: v.periodo, numeroRecibo: v.numeroRecibo ? Number(v.numeroRecibo) : undefined })
+    // sem recibo, a chave nem vai no pedido: undefined viraria null na serialização
+    const r = await executar<GuiaGerada>('darf', 'gerarDarfReceita', { periodo: v.periodo, ...(v.numeroRecibo ? { numeroRecibo: v.numeroRecibo } : {}) })
     if (r) setPronta({ id: r.id, observacoes: r.observacoes })
   }
 

@@ -923,8 +923,12 @@ export const gerarDasReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAI
 export const gerarDarfReceita = onCall({ region: REGIAO, secrets: SEGREDOS_FISCAIS, timeoutSeconds: 180, memory: '512MiB' }, async (req) => {
   const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
   const periodo = periodoDoPedido(req.data)
-  const { numeroRecibo } = (req.data ?? {}) as { numeroRecibo?: number }
-  if (numeroRecibo !== undefined && !(Number.isInteger(numeroRecibo) && numeroRecibo > 0)) throw new HttpsError('invalid-argument', 'Número do recibo inválido')
+  // Campo em branco chega como null (o SDK do cliente serializa undefined assim): é "sem recibo",
+  // não "recibo inválido". Aceita também o número digitado como texto.
+  const bruto = (req.data as { numeroRecibo?: unknown } | undefined)?.numeroRecibo
+  const textoRecibo = bruto === undefined || bruto === null ? '' : String(bruto).trim()
+  if (textoRecibo && !/^\d{1,15}$/.test(textoRecibo)) throw new HttpsError('invalid-argument', 'Número do recibo inválido: use só os dígitos que aparecem em "Nº Recibo Declaração".')
+  const numeroRecibo = textoRecibo ? Number(textoRecibo) : undefined
   try {
     const r = await gerarDarfNaReceita(id, FISCAL_CRYPTO_KEY.value(), req.auth!.uid, periodo, numeroRecibo)
     await auditar(id, 'guia_gerada_receita', req.auth!.uid, { email, detalhe: `DARF DCTFWeb ${periodo} · ${r.guia.numeroDocumento ?? r.id}` })
