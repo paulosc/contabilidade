@@ -47,6 +47,7 @@ function baixar(base64: string, nome: string) {
 }
 
 interface GuiaGerada {
+  id: string
   nova: boolean
   valor: number | null
   vencimento: string | null
@@ -110,19 +111,38 @@ export function ReceitaCard() {
 
   const resumo = (tipo: string, g: GuiaGerada) =>
     `${tipo} emitido pela Receita${g.valor ? `: ${formatBRL(g.valor)}` : ''}${g.vencimento ? `, pagar até ${dataBr(g.vencimento)}` : ''}${g.nova ? '' : ' (já estava na lista; atualizado)'}. ` +
-    'A guia está na lista abaixo, com a linha digitável e o PDF.' +
+    'O PDF foi baixado, e a guia ficou na lista abaixo com a linha digitável para copiar.' +
     // as observações vêm da própria Receita, às vezes como código curto: rotuladas, para não parecerem texto solto
     (g.observacoes?.length ? ` Observações da Receita: ${g.observacoes.join(' · ')}.` : '') +
     (g.avisos.length ? ` ${g.avisos.join(' ')}` : '')
 
+  /** Quem gera a guia quer o PDF na mão: baixa na hora, sem precisar procurar na lista. */
+  async function baixarGuia(guiaId: string) {
+    try {
+      const r = await httpsCallable<unknown, { pdfBase64: string; nomeArquivo: string }>(functions, 'pdfGuia')({ guiaId })
+      baixar(r.data.pdfBase64, r.data.nomeArquivo)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function concluir(tipo: string, r: GuiaGerada) {
+    const baixou = await baixarGuia(r.id)
+    setMsg({
+      tipo: 'sucesso',
+      texto: baixou ? resumo(tipo, r) : resumo(tipo, r).replace('O PDF foi baixado, e a guia ficou', 'Não foi possível baixar o PDF agora, mas a guia ficou'),
+    })
+  }
+
   async function gerarDas(v: FormDas) {
     const r = await executar<GuiaGerada>('das', 'gerarDasReceita', { periodo: v.periodo })
-    if (r) setMsg({ tipo: 'sucesso', texto: resumo('DAS', r) })
+    if (r) await concluir('DAS', r)
   }
 
   async function gerarDarf(v: FormDarf) {
     const r = await executar<GuiaGerada>('darf', 'gerarDarfReceita', { periodo: v.periodo, numeroRecibo: v.numeroRecibo ? Number(v.numeroRecibo) : undefined })
-    if (r) setMsg({ tipo: 'sucesso', texto: resumo('DARF', r) })
+    if (r) await concluir('DARF', r)
   }
 
   async function verDeclaracao() {
