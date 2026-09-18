@@ -102,6 +102,18 @@ export async function exigirMembro(uid: string | undefined, dados?: unknown): Pr
   return { id, email }
 }
 
+/** Equipe do escritório: qualquer membro que não seja o próprio cliente (papel 'cliente'). */
+export async function exigirEquipe(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string; papel: string }> {
+  const { id, papel, email } = await vinculoDoUsuario(uid, empresaDoPedido(dados))
+  if (papel === 'cliente') throw new HttpsError('permission-denied', 'Disponível só para a equipe do escritório')
+  return { id, email, papel }
+}
+
+/** Qualquer vínculo, devolvendo também o papel — para quem precisa distinguir cliente de equipe. */
+export async function exigirVinculo(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string; papel: string }> {
+  return vinculoDoUsuario(uid, empresaDoPedido(dados))
+}
+
 export async function exigirAdmin(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
   const { id, papel, email } = await vinculoDoUsuario(uid, empresaDoPedido(dados))
   if (papel !== 'admin') throw new HttpsError('permission-denied', 'Apenas administradores')
@@ -857,7 +869,10 @@ export const guiaCompartilhada = onRequest({ region: REGIAO, invoker: 'public', 
     return
   }
   const token = req.path.split('/').filter(Boolean).pop() ?? ''
-  const r = await abrirLinkDaGuia(token)
+  // a prévia de link do WhatsApp (e de outros apps) busca a URL sozinha: isso não é o cliente abrindo
+  const agente = String(req.get('user-agent') ?? '')
+  const ehRobo = req.method === 'HEAD' || /whatsapp|facebookexternalhit|telegrambot|slackbot|discordbot|twitterbot|bot\b|crawler|spider|preview/i.test(agente)
+  const r = await abrirLinkDaGuia(token, !ehRobo)
   if (r.situacao === 'expirado') {
     res.status(410).type('html').send(paginaDeAviso('Este link expirou', 'Os links de guia valem por 7 dias. Peça a quem enviou para compartilhar de novo.'))
     return

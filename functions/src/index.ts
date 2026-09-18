@@ -55,4 +55,16 @@ export {
   salvarMunicipioWebservice,
   sincronizarNfsePeriodico,
 } from './fiscal'
-export { carteiraDeClientes, calendarioObrigacoes, marcarObrigacaoFeita, apuracaoSimples } from './escritorio'
+export {
+  carteiraDeClientes,
+  calendarioObrigacoes,
+  marcarObrigacaoFeita,
+  apuracaoSimples,
+  adicionarMembroDaEmpresa,
+  alterarMembroDaEmpresa,
+  enviarDocumentoDaEmpresa,
+  baixarDocumentoDaEmpresa,
+  excluirDocumentoDaEmpresa,
+  criarSolicitacaoDeDocumento,
+  avaliarSolicitacaoDeDocumento,
+} from './escritorio'

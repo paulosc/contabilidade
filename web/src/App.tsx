@@ -16,6 +16,7 @@ import { EmitirNotaServico } from './pages/fiscal/EmitirNotaServico'
 import { Carteira } from './pages/escritorio/Carteira'
 import { Obrigacoes } from './pages/escritorio/Obrigacoes'
 import { Simples } from './pages/escritorio/Simples'
+import { Documentos } from './pages/escritorio/Documentos'
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
               <Route path="carteira" element={<Carteira />} />
               <Route path="obrigacoes" element={<Obrigacoes />} />
               <Route path="simples" element={<Simples />} />
+              <Route path="documentos" element={<Documentos />} />
               <Route path="guias" element={<Guias />} />
               <Route path="folha" element={<Folha />} />
               <Route path="configuracoes" element={<Configuracoes />} />

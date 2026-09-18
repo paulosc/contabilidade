@@ -276,12 +276,13 @@ export async function criarLinkDaGuia(empresaId: string, uid: string, guiaId: st
     expiraEm: Timestamp.fromDate(expiraEm),
     acessos: 0,
   })
+  await guiasRef(empresaId).doc(guiaId).set({ compartilhamento: { enviadoEm: FieldValue.serverTimestamp(), enviadoPor: uid, expiraEm: Timestamp.fromDate(expiraEm) } }, { merge: true })
   return { token, expiraEm }
 }
 
 export type GuiaCompartilhada = { situacao: 'ok'; pdf: Buffer; nomeArquivo: string } | { situacao: 'invalido' | 'expirado' }
 
-export async function abrirLinkDaGuia(token: string): Promise<GuiaCompartilhada> {
+export async function abrirLinkDaGuia(token: string, contarVisualizacao = true): Promise<GuiaCompartilhada> {
   if (!/^[A-Za-z0-9_-]{40,50}$/.test(token)) return { situacao: 'invalido' }
   const ref = compartilhamentosRef().doc(token)
   const c = (await ref.get()).data() as { empresaId: string; guiaId: string; expiraEm: Timestamp } | undefined
@@ -289,7 +290,16 @@ export async function abrirLinkDaGuia(token: string): Promise<GuiaCompartilhada>
   if (c.expiraEm.toMillis() < Date.now()) return { situacao: 'expirado' }
   try {
     const r = await pdfDaGuia(c.empresaId, c.guiaId)
-    await ref.set({ acessos: FieldValue.increment(1), ultimoAcessoEm: FieldValue.serverTimestamp() }, { merge: true })
+    if (contarVisualizacao) {
+      await ref.set({ acessos: FieldValue.increment(1), ultimoAcessoEm: FieldValue.serverTimestamp() }, { merge: true })
+      // confirmação de leitura: fica na própria guia, para a equipe ver quem já abriu
+      const guiaRef = guiasRef(c.empresaId).doc(c.guiaId)
+      const jaVista = Boolean(((await guiaRef.get()).data() as Guia | undefined)?.compartilhamento?.primeiraVisualizacaoEm)
+      await guiaRef.set(
+        { compartilhamento: { visualizacoes: FieldValue.increment(1), ultimaVisualizacaoEm: FieldValue.serverTimestamp(), ...(jaVista ? {} : { primeiraVisualizacaoEm: FieldValue.serverTimestamp() }) } },
+        { merge: true },
+      )
+    }
     return { situacao: 'ok', ...r }
   } catch {
     // guia excluída depois de compartilhada

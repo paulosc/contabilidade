@@ -10,7 +10,7 @@ import { db, functions } from '../lib/firebase'
 import { useColecao, useDocumento } from '../services/firestore'
 import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, EstadoVazio, Input, Select, Spinner } from '../components/ui'
 import { confirmar } from '../components/Dialogo'
-import { formatBRL } from '../lib/utils'
+import { formatBRL, formatData } from '../lib/utils'
 import { TIPOS_GUIA, diasAteVencer, formatarLinhaDigitavel, periodoLegivel } from '../lib/guias'
 import { AcoesDaGuia, GuiaPronta } from './guias/AcoesDaGuia'
 import { ReceitaCard } from './guias/ReceitaCard'
@@ -149,6 +149,16 @@ function DetalheGuia({
         <AcoesDaGuia guia={guia} aoAvisar={(texto) => setAvisoAcao(texto)} />
         {avisoAcao && <p className="mt-2 text-xs text-slate-600">{avisoAcao}</p>}
       </div>
+
+      {guia.compartilhamento?.enviadoEm && (
+        <p className={`mt-3 text-xs font-medium ${guia.compartilhamento.visualizacoes ? 'text-emerald-700' : 'text-slate-500'}`}>
+          Link enviado em {formatData(guia.compartilhamento.enviadoEm)} ·{' '}
+          {guia.compartilhamento.visualizacoes
+            ? `aberto ${guia.compartilhamento.visualizacoes} ${guia.compartilhamento.visualizacoes === 1 ? 'vez' : 'vezes'}, a primeira em ${guia.compartilhamento.primeiraVisualizacaoEm?.toDate().toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) ?? '—'}`
+            : 'ainda não foi aberto'}
+          .
+        </p>
+      )}
 
       {guia.pagamentoConfirmado && (
         <p className="mt-3 text-xs font-medium text-emerald-700">

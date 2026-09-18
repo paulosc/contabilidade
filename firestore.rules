@@ -21,6 +21,12 @@ service cloud.firestore {
       return logado() && exists(membroPath(empresaId));
     }
 
+    // Equipe do escritório: qualquer membro que não seja o próprio cliente (papel 'cliente').
+    function ehEquipe(empresaId) {
+      return logado() && exists(membroPath(empresaId))
+        && get(membroPath(empresaId)).data.papel != 'cliente';
+    }
+
     function ehAdmin(empresaId) {
       return logado() && exists(membroPath(empresaId))
         && get(membroPath(empresaId)).data.papel == 'admin';
@@ -87,10 +93,13 @@ service cloud.firestore {
       match /notasServico/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       // guias a pagar: o PDF é lido e gravado pelo backend; a baixa de pagamento também passa por lá
       match /guias/{doc=**}                 { allow read: if ehMembro(empresaId); allow write: if false; }
+      // documentos do cliente e pedidos de documento: o arquivo entra e sai pelo backend
+      match /documentos/{doc=**}            { allow read: if ehMembro(empresaId); allow write: if false; }
+      match /solicitacoes/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       // retrato da empresa na Receita (caixa postal, situação fiscal): só o backend grava
-      match /receita/{doc=**}               { allow read: if ehMembro(empresaId); allow write: if false; }
+      match /receita/{doc=**}               { allow read: if ehEquipe(empresaId); allow write: if false; }
       // checklist de obrigações: a marcação passa pelo backend, que registra quem marcou
-      match /obrigacoes/{doc=**}            { allow read: if ehMembro(empresaId); allow write: if false; }
+      match /obrigacoes/{doc=**}            { allow read: if ehEquipe(empresaId); allow write: if false; }
 
       // Folha de pagamento: CPF e salário são dado pessoal — só administradores.
       // Cadastro e rubricas o admin edita; folha e holerites só o backend grava (o cálculo é dele).

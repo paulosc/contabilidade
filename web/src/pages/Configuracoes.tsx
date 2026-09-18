@@ -6,12 +6,13 @@ import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { useAuth } from '../auth/AuthProvider'
 import { db } from '../lib/firebase'
 import { useColecao } from '../services/firestore'
-import { Alerta, Badge, Botao, CabecalhoPagina, Campo, Card, Input, Select } from '../components/ui'
+import { Alerta, Botao, CabecalhoPagina, Campo, Card, Input, Select } from '../components/ui'
 import { formatCpfCnpj, formatData, formatTelefone, somenteDigitos, validarCnpj } from '../lib/utils'
 import { UFS } from '../lib/fiscal'
 import { FiscalCard } from './configuracoes/FiscalCard'
 import { ImportacaoMunicipalCard } from './configuracoes/ImportacaoMunicipalCard'
-import { OPERACOES_AUDITADAS, PAPEIS, type Membro, type RegistroAuditoria } from '../types'
+import { EquipeCard } from './configuracoes/EquipeCard'
+import { OPERACOES_AUDITADAS, type RegistroAuditoria } from '../types'
 
 const schema = z.object({
   nome: z.string().min(2, 'Informe o nome'),
@@ -26,7 +27,6 @@ type Form = z.infer<typeof schema>
 export function Configuracoes() {
   const { empresa, membro } = useAuth()
   const ehAdmin = membro?.papel === 'admin'
-  const membros = useColecao<Membro>('membros')
   const auditoria = useColecao<RegistroAuditoria>('auditoriaFiscal')
   const [msg, setMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null)
 
@@ -135,21 +135,7 @@ export function Configuracoes() {
         <FiscalCard />
         <ImportacaoMunicipalCard />
 
-        <Card>
-          <h2 className="mb-1 text-base font-semibold">Equipe</h2>
-          <p className="mb-4 text-sm text-slate-500">Quem tem acesso aos dados desta empresa.</p>
-          <ul className="divide-y divide-slate-100">
-            {membros.dados.map((m) => (
-              <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900">{m.nome}</p>
-                  <p className="truncate text-xs text-slate-500">{m.email}</p>
-                </div>
-                <Badge tom={m.papel === 'admin' ? 'roxo' : 'neutro'}>{PAPEIS[m.papel]}</Badge>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <EquipeCard />
 
         {ehAdmin && (
           <Card>

@@ -1,23 +1,25 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { Briefcase, Building2, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
+import { Briefcase, Building2, FolderOpen, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
 import { PAPEIS } from '../../types'
 import { IconeMarca } from '../Marca'
 
+/** `para`: quem vê o item. O cliente (dono da empresa) acompanha guias, notas e documentos; o resto é rotina do escritório. */
 const itens = [
-  { para: '/carteira', rotulo: 'Carteira de clientes', Icone: Briefcase, fim: undefined },
-  { para: '/', rotulo: 'Painel', Icone: LayoutDashboard, fim: true },
-  { para: '/obrigacoes', rotulo: 'Obrigações', Icone: CalendarCheck, fim: undefined },
-  { para: '/notas-fiscais', rotulo: 'Notas fiscais (NF-e)', Icone: ScanLine, fim: undefined },
-  { para: '/notas-servico', rotulo: 'Notas de serviço', Icone: FileSpreadsheet, fim: undefined },
-  { para: '/simples', rotulo: 'Simples Nacional', Icone: Calculator, fim: undefined },
-  { para: '/guias', rotulo: 'Guias a pagar', Icone: Landmark, fim: undefined },
-  { para: '/folha', rotulo: 'Folha de pagamento', Icone: Users, fim: undefined },
-  { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined },
-]
+  { para: '/carteira', rotulo: 'Carteira de clientes', Icone: Briefcase, fim: undefined, quem: 'equipe' },
+  { para: '/', rotulo: 'Painel', Icone: LayoutDashboard, fim: true, quem: 'todos' },
+  { para: '/obrigacoes', rotulo: 'Obrigações', Icone: CalendarCheck, fim: undefined, quem: 'equipe' },
+  { para: '/documentos', rotulo: 'Documentos', Icone: FolderOpen, fim: undefined, quem: 'todos' },
+  { para: '/notas-fiscais', rotulo: 'Notas fiscais (NF-e)', Icone: ScanLine, fim: undefined, quem: 'todos' },
+  { para: '/notas-servico', rotulo: 'Notas de serviço', Icone: FileSpreadsheet, fim: undefined, quem: 'todos' },
+  { para: '/simples', rotulo: 'Simples Nacional', Icone: Calculator, fim: undefined, quem: 'equipe' },
+  { para: '/guias', rotulo: 'Guias a pagar', Icone: Landmark, fim: undefined, quem: 'todos' },
+  { para: '/folha', rotulo: 'Folha de pagamento', Icone: Users, fim: undefined, quem: 'admin' },
+  { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined, quem: 'equipe' },
+] as const
 
 export function AppShell() {
   const { empresa, membro, user, sair, erroEmpresa, empresas, trocarEmpresa } = useAuth()
@@ -26,7 +28,9 @@ export function AppShell() {
 
   const nav = (
     <nav className="flex flex-1 flex-col gap-1 px-3">
-      {itens.map(({ para, rotulo, Icone, fim }) => (
+      {itens
+        .filter((i) => i.quem === 'todos' || (i.quem === 'equipe' && membro?.papel !== 'cliente') || (i.quem === 'admin' && membro?.papel === 'admin'))
+        .map(({ para, rotulo, Icone, fim }) => (
         <NavLink
           key={para}
           to={para}

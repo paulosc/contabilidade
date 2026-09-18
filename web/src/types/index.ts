@@ -4,11 +4,12 @@ export type ComId<T> = T & { id: string }
 
 // ---------- Tenant / usuários ----------
 
-export type Papel = 'admin' | 'contador' | 'assistente'
+export type Papel = 'admin' | 'contador' | 'assistente' | 'cliente'
 export const PAPEIS: Record<Papel, string> = {
   admin: 'Administrador',
   contador: 'Contador',
   assistente: 'Assistente',
+  cliente: 'Cliente',
 }
 
 export interface Endereco {
@@ -248,6 +249,14 @@ export type OperacaoAuditada =
   | 'esocial_enviado'
   | 'obrigacao_marcada'
   | 'serpro_emissao'
+  | 'membro_adicionado'
+  | 'membro_alterado'
+  | 'membro_removido'
+  | 'documento_enviado'
+  | 'documento_baixado'
+  | 'documento_excluido'
+  | 'solicitacao_criada'
+  | 'solicitacao_avaliada'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -274,6 +283,14 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   esocial_enviado: 'Envio ao eSocial',
   obrigacao_marcada: 'Obrigação marcada no checklist',
   serpro_emissao: 'Emissão de relatório na Receita',
+  membro_adicionado: 'Acesso concedido',
+  membro_alterado: 'Papel alterado',
+  membro_removido: 'Acesso removido',
+  documento_enviado: 'Documento enviado',
+  documento_baixado: 'Documento baixado',
+  documento_excluido: 'Documento excluído',
+  solicitacao_criada: 'Pedido de documento criado',
+  solicitacao_avaliada: 'Pedido de documento avaliado',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */
@@ -404,6 +421,8 @@ export interface Guia {
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
+  /** Link enviado ao cliente e se ele já abriu — a confirmação de leitura */
+  compartilhamento?: { enviadoEm?: Timestamp; expiraEm?: Timestamp; visualizacoes?: number; primeiraVisualizacaoEm?: Timestamp; ultimaVisualizacaoEm?: Timestamp }
   /** Baixa dada pela consulta de pagamentos da Receita */
   pagamentoConfirmado?: { fonte: 'receita'; dataArrecadacao: string; valorTotal?: number }
   origem: 'upload' | 'serpro' | 'gerada'

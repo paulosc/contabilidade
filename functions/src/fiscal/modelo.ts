@@ -288,6 +288,14 @@ export type OperacaoAuditada =
   | 'esocial_enviado'
   | 'obrigacao_marcada'
   | 'serpro_emissao'
+  | 'membro_adicionado'
+  | 'membro_alterado'
+  | 'membro_removido'
+  | 'documento_enviado'
+  | 'documento_baixado'
+  | 'documento_excluido'
+  | 'solicitacao_criada'
+  | 'solicitacao_avaliada'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
@@ -407,6 +415,8 @@ export interface Guia {
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
+  /** Link enviado ao cliente e se ele já abriu — a confirmação de leitura da guia */
+  compartilhamento?: { enviadoEm?: Timestamp; enviadoPor?: string; expiraEm?: Timestamp; visualizacoes?: number; primeiraVisualizacaoEm?: Timestamp; ultimaVisualizacaoEm?: Timestamp }
   /** Baixa dada pela consulta de pagamentos da Receita (Integra Contador), não à mão */
   pagamentoConfirmado?: { fonte: 'receita'; dataArrecadacao: string; valorTotal?: number; conferidoEm: Timestamp }
   /** 'upload' = PDF oficial enviado; 'serpro' = emitido pela Receita via Integra Contador; 'gerada' = recibo deste sistema */
