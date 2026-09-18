@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { doc, limit, orderBy, serverTimestamp, setDoc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { Check, ChevronDown, ChevronUp, Copy, FilePlus2, Landmark, Save, Trash2, Undo2, Upload } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, FilePlus2, Landmark, Pencil, Save, Trash2, Undo2, Upload, X } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { db, functions } from '../lib/firebase'
 import { useColecao, useDocumento } from '../services/firestore'
@@ -282,8 +282,8 @@ function HonorariosCard() {
           <FilePlus2 className="h-4 w-4" /> Recibo de honorários
         </h2>
         {configurado && (
-          <Botao tamanho="sm" variante="fantasma" onClick={() => setEditando((v) => !v)}>
-            {editando ? 'Fechar' : 'Dados do escritório'}
+          <Botao tamanho="sm" variante="secundario" onClick={() => setEditando((v) => !v)}>
+            {editando ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />} {editando ? 'Fechar edição' : 'Editar dados do escritório'}
           </Botao>
         )}
       </div>
