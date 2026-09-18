@@ -301,6 +301,8 @@ export type OperacaoAuditada =
   | 'contabil_lancamento'
   | 'contabil_periodo'
   | 'contrato_gerado'
+  | 'lucro_registrado'
+  | 'lucro_excluido'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada

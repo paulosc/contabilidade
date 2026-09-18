@@ -262,6 +262,8 @@ export type OperacaoAuditada =
   | 'contabil_lancamento'
   | 'contabil_periodo'
   | 'contrato_gerado'
+  | 'lucro_registrado'
+  | 'lucro_excluido'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -301,6 +303,8 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   contabil_lancamento: 'Lançamento contábil',
   contabil_periodo: 'Período contábil encerrado ou reaberto',
   contrato_gerado: 'Contrato de serviços gerado',
+  lucro_registrado: 'Lucro distribuído registrado',
+  lucro_excluido: 'Lucro distribuído excluído',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */

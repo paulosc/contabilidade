@@ -12,6 +12,7 @@ import { confirmar } from '../../components/Dialogo'
 import { formatBRL } from '../../lib/utils'
 import { TIPOS_TRABALHADOR, competenciaLegivel, paraCampo, paraNumero } from '../../lib/folha'
 import { FuncionariosCard } from './FuncionariosCard'
+import { LucrosCard } from './LucrosCard'
 import type { ComId, Folha as FolhaDoMes, Funcionario, Holerite, Rubrica } from '../../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -412,6 +413,7 @@ export function Folha() {
       )}
 
       <FuncionariosCard funcionarios={ordenados} />
+      <LucrosCard />
     </>
   )
 }

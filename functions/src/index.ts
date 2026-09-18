@@ -80,3 +80,4 @@ export {
   demonstracoesContabeis,
   fecharPeriodoContabil,
 } from './contabil'
+export { registrarLucroDistribuido, excluirLucroDistribuido } from './folha/lucrosServico'

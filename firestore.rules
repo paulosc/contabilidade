@@ -112,6 +112,8 @@ service cloud.firestore {
       match /funcionarios/{doc}             { allow read, write: if ehAdmin(empresaId); }
       match /rubricas/{doc}                 { allow read, write: if ehAdmin(empresaId); }
       match /folhas/{doc=**}                { allow read: if ehAdmin(empresaId); allow write: if false; }
+      // lucros pagos aos sócios: renda de pessoa física, e a retenção é calculada no backend
+      match /lucros/{doc}                   { allow read: if ehAdmin(empresaId); allow write: if false; }
       match /sincronizacoesFiscais/{doc=**} { allow read: if ehMembro(empresaId); allow write: if false; }
       match /auditoriaFiscal/{doc=**}       { allow read: if ehAdmin(empresaId);  allow write: if false; }
     }
