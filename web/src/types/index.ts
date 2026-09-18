@@ -240,6 +240,7 @@ export type OperacaoAuditada =
   | 'serpro_configurado'
   | 'serpro_removido'
   | 'guia_gerada_receita'
+  | 'serpro_consulta'
   | 'folha_calculada'
   | 'folha_fechada'
   | 'folha_reaberta'
@@ -262,6 +263,7 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   serpro_configurado: 'Integra Contador configurado',
   serpro_removido: 'Integra Contador removido',
   guia_gerada_receita: 'Guia gerada pela Receita',
+  serpro_consulta: 'Consulta na Receita (Serpro)',
   folha_calculada: 'Folha calculada',
   folha_fechada: 'Folha fechada',
   folha_reaberta: 'Folha reaberta',

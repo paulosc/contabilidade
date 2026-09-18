@@ -280,6 +280,7 @@ export type OperacaoAuditada =
   | 'serpro_configurado'
   | 'serpro_removido'
   | 'guia_gerada_receita'
+  | 'serpro_consulta'
   | 'folha_calculada'
   | 'folha_fechada'
   | 'folha_reaberta'

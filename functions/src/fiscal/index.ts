@@ -940,6 +940,8 @@ export const declaracaoPgdasd = onCall({ region: REGIAO, secrets: SEGREDOS_FISCA
   const periodo = periodoDoPedido(req.data)
   try {
     const d = await declaracaoDoPeriodo(id, FISCAL_CRYPTO_KEY.value(), periodo)
+    // consulta também é requisição tarifada: fica registrada para o painel de gasto
+    await auditar(id, 'serpro_consulta', req.auth!.uid, { detalhe: `Declaração PGDAS-D ${periodo}` })
     const arquivo = (a?: { nomeArquivo: string; pdf: Buffer }) => (a ? { nomeArquivo: a.nomeArquivo, pdfBase64: a.pdf.toString('base64') } : null)
     return { numeroDeclaracao: d.numeroDeclaracao ?? null, recibo: arquivo(d.recibo), declaracao: arquivo(d.declaracao) }
   } catch (e) {

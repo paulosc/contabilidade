@@ -10,6 +10,7 @@ import { Alerta, Badge, Botao, Campo, Card, Input } from '../../components/ui'
 import { confirmar } from '../../components/Dialogo'
 import { formatCpfCnpj } from '../../lib/utils'
 import { GuiaPronta } from './AcoesDaGuia'
+import { ConsumoSerpro } from './ConsumoSerpro'
 import type { ConfiguracaoFiscal } from '../../types'
 
 type Msg = { tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null
@@ -213,6 +214,7 @@ export function ReceitaCard() {
               </Botao>
             </div>
           </form>
+          <ConsumoSerpro />
           <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-200 pt-3">
             <Botao tamanho="sm" variante="secundario" carregando={ocupado === 'testar'} onClick={() => void testar()}>
               <PlugZap className="h-3.5 w-3.5" /> Testar
