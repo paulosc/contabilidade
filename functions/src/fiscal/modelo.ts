@@ -296,6 +296,10 @@ export type OperacaoAuditada =
   | 'documento_excluido'
   | 'solicitacao_criada'
   | 'solicitacao_avaliada'
+  | 'contabil_plano'
+  | 'contabil_extrato'
+  | 'contabil_lancamento'
+  | 'contabil_periodo'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada

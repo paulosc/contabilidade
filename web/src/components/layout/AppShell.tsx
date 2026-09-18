@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { Briefcase, Building2, FolderOpen, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
+import { BookOpen, Briefcase, Building2, FolderOpen, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
@@ -16,6 +16,7 @@ const itens = [
   { para: '/notas-fiscais', rotulo: 'Notas fiscais (NF-e)', Icone: ScanLine, fim: undefined, quem: 'todos' },
   { para: '/notas-servico', rotulo: 'Notas de serviço', Icone: FileSpreadsheet, fim: undefined, quem: 'todos' },
   { para: '/simples', rotulo: 'Simples Nacional', Icone: Calculator, fim: undefined, quem: 'equipe' },
+  { para: '/contabilidade', rotulo: 'Contabilidade', Icone: BookOpen, fim: undefined, quem: 'equipe' },
   { para: '/guias', rotulo: 'Guias a pagar', Icone: Landmark, fim: undefined, quem: 'todos' },
   { para: '/folha', rotulo: 'Folha de pagamento', Icone: Users, fim: undefined, quem: 'admin' },
   { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined, quem: 'equipe' },
@@ -133,7 +134,7 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen">
       {/* Sidebar desktop */}
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex print:!hidden">
         {seletor}
         <div className="flex flex-1 flex-col py-4">{nav}</div>
         {rodape}
@@ -157,7 +158,7 @@ export function AppShell() {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
+        <header className="flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden print:hidden">
           <button aria-label="Abrir menu" onClick={() => setAberto(true)} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100">
             <Menu className="h-5 w-5" />
           </button>

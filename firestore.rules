@@ -78,7 +78,8 @@ service cloud.firestore {
       // backend da NF-e (certificado, NSU, estado da sincronização) e por isso é só leitura aqui.
       match /configuracoes/{doc} {
         allow read: if ehMembro(empresaId);
-        allow write: if ehAdmin(empresaId) && doc != 'fiscal';
+        // 'contabilidade' guarda o período encerrado: só o backend mexe, senão o encerramento não valeria nada
+        allow write: if ehAdmin(empresaId) && doc != 'fiscal' && doc != 'contabilidade';
       }
 
       // Certificado digital A1 cifrado: nem o administrador alcança, só o backend.
@@ -93,6 +94,11 @@ service cloud.firestore {
       match /notasServico/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       // guias a pagar: o PDF é lido e gravado pelo backend; a baixa de pagamento também passa por lá
       match /guias/{doc=**}                 { allow read: if ehMembro(empresaId); allow write: if false; }
+      // contabilidade: rotina da equipe do escritório; toda gravação passa pelo backend (partidas dobradas, período encerrado)
+      match /contas/{doc}                   { allow read: if ehEquipe(empresaId); allow write: if false; }
+      match /lancamentos/{doc}              { allow read: if ehEquipe(empresaId); allow write: if false; }
+      match /extrato/{doc}                  { allow read: if ehEquipe(empresaId); allow write: if false; }
+      match /regrasConciliacao/{doc}        { allow read: if ehEquipe(empresaId); allow write: if false; }
       // documentos do cliente e pedidos de documento: o arquivo entra e sai pelo backend
       match /documentos/{doc=**}            { allow read: if ehMembro(empresaId); allow write: if false; }
       match /solicitacoes/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }

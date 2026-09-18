@@ -68,3 +68,13 @@ export {
   criarSolicitacaoDeDocumento,
   avaliarSolicitacaoDeDocumento,
 } from './escritorio'
+export {
+  prepararContabilidadeDaEmpresa,
+  criarContaContabil,
+  importarExtratoOfx,
+  conciliarMovimento,
+  lancarContabil,
+  excluirLancamentoContabil,
+  demonstracoesContabeis,
+  fecharPeriodoContabil,
+} from './contabil'

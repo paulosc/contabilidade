@@ -257,6 +257,10 @@ export type OperacaoAuditada =
   | 'documento_excluido'
   | 'solicitacao_criada'
   | 'solicitacao_avaliada'
+  | 'contabil_plano'
+  | 'contabil_extrato'
+  | 'contabil_lancamento'
+  | 'contabil_periodo'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -291,6 +295,10 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   documento_excluido: 'Documento excluído',
   solicitacao_criada: 'Pedido de documento criado',
   solicitacao_avaliada: 'Pedido de documento avaliado',
+  contabil_plano: 'Plano de contas alterado',
+  contabil_extrato: 'Extrato bancário importado',
+  contabil_lancamento: 'Lançamento contábil',
+  contabil_periodo: 'Período contábil encerrado ou reaberto',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */

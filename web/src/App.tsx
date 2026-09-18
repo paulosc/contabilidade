@@ -17,6 +17,7 @@ import { Carteira } from './pages/escritorio/Carteira'
 import { Obrigacoes } from './pages/escritorio/Obrigacoes'
 import { Simples } from './pages/escritorio/Simples'
 import { Documentos } from './pages/escritorio/Documentos'
+import { Contabilidade } from './pages/contabil/Contabilidade'
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="obrigacoes" element={<Obrigacoes />} />
               <Route path="simples" element={<Simples />} />
               <Route path="documentos" element={<Documentos />} />
+              <Route path="contabilidade" element={<Contabilidade />} />
               <Route path="guias" element={<Guias />} />
               <Route path="folha" element={<Folha />} />
               <Route path="configuracoes" element={<Configuracoes />} />
