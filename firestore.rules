@@ -79,7 +79,7 @@ service cloud.firestore {
       match /configuracoes/{doc} {
         allow read: if ehMembro(empresaId);
         // 'contabilidade' guarda o período encerrado: só o backend mexe, senão o encerramento não valeria nada
-        allow write: if ehAdmin(empresaId) && doc != 'fiscal' && doc != 'contabilidade';
+        allow write: if ehAdmin(empresaId) && doc != 'fiscal' && doc != 'contabilidade' && doc != 'contrato';
       }
 
       // Certificado digital A1 cifrado: nem o administrador alcança, só o backend.

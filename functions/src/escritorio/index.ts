@@ -3,15 +3,18 @@
  * Simples. O vínculo com a empresa é sempre conferido no backend (exigirMembro), como no restante.
  */
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { REGIAO } from '../lib/config'
 import { auditar, exigirAdmin, exigirEquipe, exigirMembro, exigirVinculo } from '../fiscal'
 import { ErroDocumento, avaliarSolicitacao, baixarDocumento, criarSolicitacao, enviarDocumento, excluirDocumento } from './documentos'
+import { ErroContrato, type DadosContrato } from './contrato'
+import { gerarContrato, gerarHonorariosRecorrentes } from './gestao'
 import { ErroMembro, adicionarMembro, alterarPapel, removerMembro } from './membros'
 import { ErroEscritorio, apuracaoDoPeriodo, calendarioDaEmpresa, carteiraDoUsuario, marcarObrigacao } from './servico'
 
 const traduzir = (e: unknown): never => {
   if (e instanceof HttpsError) throw e
-  if (e instanceof ErroEscritorio || e instanceof ErroDocumento || e instanceof ErroMembro) throw new HttpsError('failed-precondition', e.message)
+  if (e instanceof ErroEscritorio || e instanceof ErroDocumento || e instanceof ErroMembro || e instanceof ErroContrato) throw new HttpsError('failed-precondition', e.message)
   throw new HttpsError('internal', (e as Error).message)
 }
 
@@ -171,4 +174,25 @@ export const avaliarSolicitacaoDeDocumento = onCall({ region: REGIAO }, async (r
   } catch (e) {
     return traduzir(e)
   }
+})
+
+// ---------- gestão do escritório ----------
+
+/** Minuta do contrato de prestação de serviços contábeis (Resolução CFC 1.590/2020). */
+export const gerarContratoDeServicos = onCall({ region: REGIAO, timeoutSeconds: 120, memory: '512MiB' }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const dados = (req.data as { contrato?: DadosContrato } | undefined)?.contrato
+  if (!dados || typeof dados !== 'object') throw new HttpsError('invalid-argument', 'Informe os dados do contrato')
+  try {
+    const r = await gerarContrato(id, { uid: req.auth!.uid, nome: nomeDe(req, email) }, dados)
+    await auditar(id, 'contrato_gerado', req.auth!.uid, { email, detalhe: `${dados.contratante?.nome ?? ''} · honorários ${dados.honorarioMensal}` })
+    return r
+  } catch (e) {
+    return traduzir(e)
+  }
+})
+
+/** Todo dia, 7h: gera o recibo de honorários do mês para quem ligou a recorrência. Não repete o que já existe. */
+export const honorariosRecorrentes = onSchedule({ schedule: 'every day 07:00', timeZone: 'America/Sao_Paulo', region: REGIAO, timeoutSeconds: 540, memory: '512MiB' }, async () => {
+  await gerarHonorariosRecorrentes()
 })

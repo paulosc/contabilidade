@@ -300,6 +300,7 @@ export type OperacaoAuditada =
   | 'contabil_extrato'
   | 'contabil_lancamento'
   | 'contabil_periodo'
+  | 'contrato_gerado'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
@@ -439,6 +440,9 @@ export interface ConfiguracaoHonorarios {
   valorMensal?: number
   diaVencimento?: number
   mensagem?: string
+  /** Marca o documento para o agendamento de honorários recorrentes achar (collection group) */
+  tipo?: 'honorarios'
+  recorrente?: boolean
   /** Chave PIX do escritório: com ela o recibo sai com QR Code e copia e cola. Não é segredo — vai impressa no recibo. */
   pix?: { tipo: 'cpf_cnpj' | 'celular' | 'email' | 'aleatoria'; chave: string; nome?: string; cidade: string } | null
   proximoNumero?: number

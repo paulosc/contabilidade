@@ -58,6 +58,9 @@ export function Carteira() {
   const vencidas = empresas.reduce((s, e) => s + e.guias.vencidas, 0)
   const atrasadas = empresas.reduce((s, e) => s + (e.obrigacoes?.atrasadas ?? 0), 0)
   const emAberto = empresas.reduce((s, e) => s + e.guias.valorAberto, 0)
+  const honorariosAtrasados = empresas.reduce((s, e) => s + (e.honorariosEmAtraso?.valor ?? 0), 0)
+  // a declaração ao COAF é do próprio escritório, uma vez por ano: lembrar em dezembro e durante janeiro
+  const mesDeHoje = Number((dados?.hoje ?? '').slice(5, 7))
 
   return (
     <>
@@ -96,8 +99,17 @@ export function Carteira() {
             <Numero rotulo="Clientes" valor={String(empresas.length)} />
             <Numero rotulo="Com pendência" valor={String(comPendencia)} tom={comPendencia ? 'amarelo' : undefined} />
             <Numero rotulo="Guias vencidas · obrigações atrasadas" valor={`${vencidas} · ${atrasadas}`} tom={vencidas + atrasadas ? 'vermelho' : undefined} />
-            <Numero rotulo="Guias em aberto" valor={formatBRL(emAberto)} />
+            <Numero rotulo={honorariosAtrasados ? 'Honorários em atraso' : 'Guias em aberto'} valor={formatBRL(honorariosAtrasados || emAberto)} tom={honorariosAtrasados ? 'vermelho' : undefined} />
           </div>
+
+          {(mesDeHoje === 12 || mesDeHoje === 1) && (
+            <div className="mb-4">
+              <Alerta tipo="info">
+                <strong>Declaração de não ocorrência ao COAF:</strong> {mesDeHoje === 1 ? 'o prazo está aberto — de 1º a 31 de janeiro' : 'o prazo abre em 1º de janeiro e vai até o dia 31'}, pelo Portal de Sistemas do CFC. É obrigação do
+                responsável técnico e da organização contábil, referente ao ano anterior (Resolução CFC 1.721/2024). Se houve operação suspeita comunicada no ano, a declaração não se aplica.
+              </Alerta>
+            </div>
+          )}
 
           <div className="space-y-3">
             {empresas.map((e) => (
@@ -148,6 +160,11 @@ export function Carteira() {
                   ) : (
                     <>
                       <TriangleAlert className="h-4 w-4 text-amber-600" />
+                      {e.honorariosEmAtraso?.quantidade > 0 && (
+                        <Badge tom="vermelho">
+                          Honorários em atraso: {formatBRL(e.honorariosEmAtraso.valor)} ({e.honorariosEmAtraso.quantidade})
+                        </Badge>
+                      )}
                       {e.pendencias.map((p) => (
                         <Badge key={p} tom={/vencid|atrasad/.test(p) ? 'vermelho' : 'amarelo'}>
                           {p}

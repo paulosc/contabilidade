@@ -246,6 +246,8 @@ export interface ResumoDaEmpresa {
   regime?: string
   guias: { pendentes: number; vencidas: number; vencendo: number; valorAberto: number; proximoVencimento?: string }
   certificado?: { validoAte: string; dias: number }
+  /** Honorários do escritório vencidos e não pagos por este cliente */
+  honorariosEmAtraso: { quantidade: number; valor: number }
   obrigacoes?: { atrasadas: number; proximas: number; abertasNoMes: number; proxima?: { nome: string; vencimento: string } }
   pendencias: string[]
 }
@@ -266,8 +268,13 @@ async function resumoDaEmpresa(empresaId: string, papel: string, hoje: string): 
   const pendencias: string[] = []
 
   const guias = { pendentes: 0, vencidas: 0, vencendo: 0, valorAberto: 0, proximoVencimento: undefined as string | undefined }
+  const honorariosEmAtraso = { quantidade: 0, valor: 0 }
   for (const d of guiasPendentes.docs) {
     const g = d.data() as Guia
+    if (g.tipo === 'honorarios' && g.vencimento && g.vencimento < hoje) {
+      honorariosEmAtraso.quantidade++
+      honorariosEmAtraso.valor = centavos(honorariosEmAtraso.valor + (g.valor ?? 0))
+    }
     guias.pendentes++
     guias.valorAberto = centavos(guias.valorAberto + (g.valor ?? 0))
     if (!g.vencimento) continue
@@ -319,7 +326,7 @@ async function resumoDaEmpresa(empresaId: string, papel: string, hoje: string): 
     if (atrasadas.length) pendencias.push(`${atrasadas.length} ${atrasadas.length === 1 ? 'obrigação atrasada' : 'obrigações atrasadas'}`)
   }
 
-  return { empresaId, nome: dados.nome ?? 'Empresa', cnpj: dados.cnpj, papel, regime: perfilGuardado?.regime, guias, certificado, obrigacoes, pendencias }
+  return { empresaId, nome: dados.nome ?? 'Empresa', cnpj: dados.cnpj, papel, regime: perfilGuardado?.regime, guias, honorariosEmAtraso, certificado, obrigacoes, pendencias }
 }
 
 const MAX_EMPRESAS_NA_CARTEIRA = 200

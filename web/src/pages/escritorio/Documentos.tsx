@@ -4,7 +4,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { httpsCallable } from 'firebase/functions'
 import { orderBy, limit, type Timestamp } from 'firebase/firestore'
-import { Check, Download, FilePlus2, FolderOpen, Inbox, Trash2, Upload, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Check, Download, FilePlus2, FileSignature, FolderOpen, Inbox, Trash2, Upload, X } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useAuth } from '../../auth/AuthProvider'
 import { useColecao } from '../../services/firestore'
@@ -202,9 +203,18 @@ export function Documentos() {
         descricao={daEquipe ? 'Peça documentos ao cliente, confira o que chegou e mantenha o arquivo por competência.' : 'Envie o que o escritório pediu e consulte o que já foi entregue.'}
         acoes={
           daEquipe ? (
+            <>
+              {membro?.papel === 'admin' && (
+                <Link to="/contrato">
+                  <Botao variante="secundario">
+                    <FileSignature className="h-4 w-4" /> Contrato de serviços
+                  </Botao>
+                </Link>
+              )}
             <Botao onClick={() => setPedindo((v) => !v)}>
               {pedindo ? <X className="h-4 w-4" /> : <FilePlus2 className="h-4 w-4" />} {pedindo ? 'Fechar' : 'Pedir documento'}
             </Botao>
+            </>
           ) : undefined
         }
       />

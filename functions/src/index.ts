@@ -67,6 +67,8 @@ export {
   excluirDocumentoDaEmpresa,
   criarSolicitacaoDeDocumento,
   avaliarSolicitacaoDeDocumento,
+  gerarContratoDeServicos,
+  honorariosRecorrentes,
 } from './escritorio'
 export {
   prepararContabilidadeDaEmpresa,

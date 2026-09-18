@@ -42,6 +42,7 @@ export interface ResumoDaEmpresa {
   papel: string
   regime?: Regime
   guias: { pendentes: number; vencidas: number; vencendo: number; valorAberto: number; proximoVencimento?: string }
+  honorariosEmAtraso: { quantidade: number; valor: number }
   certificado?: { validoAte: string; dias: number }
   obrigacoes?: { atrasadas: number; proximas: number; abertasNoMes: number; proxima?: { nome: string; vencimento: string } }
   pendencias: string[]

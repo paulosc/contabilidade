@@ -28,7 +28,9 @@ export function baixarPdf(base64: string, nomeArquivo: string): void {
  */
 export function mensagemDaGuia(guia: Guia, documento: { anexo: true } | { link: string; validoAte: string } | { nenhum: true }): string {
   const ehRecibo = guia.tipo === 'honorarios'
+  const vencida = guia.status === 'pendente' && Boolean(guia.vencimento) && guia.vencimento! < new Date().toLocaleDateString('en-CA')
   const linhas = [
+    vencida ? `Olá! Passando para lembrar ${ehRecibo ? 'do honorário' : 'da guia'} em aberto, que venceu em ${dataBr(guia.vencimento)}:` : '',
     `*${TIPOS_GUIA[guia.tipo]}*${guia.periodo ? ` — competência ${periodoLegivel(guia.periodo)}` : ''}`,
     guia.valor !== undefined ? `Valor: ${formatBRL(guia.valor)}` : '',
     guia.vencimento ? `${ehRecibo ? 'Vencimento' : 'Pagar até'}: ${dataBr(guia.vencimento)}` : '',

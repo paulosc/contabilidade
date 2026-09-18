@@ -210,12 +210,15 @@ const esquemaEscritorio = z
   valorMensal: z.string().trim(),
   diaVencimento: z.string().trim().refine((v) => !v || (Number(v) >= 1 && Number(v) <= 31), 'Dia de 1 a 31'),
   mensagem: z.string().trim().max(200, 'No máximo 200 caracteres'),
+  recorrente: z.boolean(),
   pixTipo: z.enum(['', 'cpf_cnpj', 'celular', 'email', 'aleatoria']),
   pixChave: z.string().trim(),
   pixNome: z.string().trim().max(60),
   pixCidade: z.string().trim().max(40),
 })
   .superRefine((v, ctx) => {
+    if (v.recorrente && !(Number(v.valorMensal.replace(/\./g, '').replace(',', '.')) > 0)) ctx.addIssue({ code: 'custom', path: ['valorMensal'], message: 'Para gerar todo mês, informe o valor' })
+    if (v.recorrente && !v.diaVencimento) ctx.addIssue({ code: 'custom', path: ['diaVencimento'], message: 'Para gerar todo mês, informe o dia' })
     if (!v.pixTipo) return
     if (!CHAVES_PIX[v.pixTipo].valida(v.pixChave)) ctx.addIssue({ code: 'custom', path: ['pixChave'], message: `Não parece uma chave do tipo ${CHAVES_PIX[v.pixTipo].rotulo}` })
     if (!v.pixCidade) ctx.addIssue({ code: 'custom', path: ['pixCidade'], message: 'O PIX exige a cidade do recebedor' })
@@ -250,6 +253,7 @@ function HonorariosCard() {
       valorMensal: config?.valorMensal ? config.valorMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '',
       diaVencimento: config?.diaVencimento ? String(config.diaVencimento) : '',
       mensagem: config?.mensagem ?? '',
+      recorrente: config?.recorrente ?? false,
       pixTipo: config?.pix?.tipo ?? '',
       pixChave: config?.pix?.chave ?? '',
       pixNome: config?.pix?.nome ?? '',
@@ -283,6 +287,9 @@ function HonorariosCard() {
           valorMensal: v.valorMensal ? Number(v.valorMensal.replace(/\./g, '').replace(',', '.')) : null,
           diaVencimento: v.diaVencimento ? Number(v.diaVencimento) : null,
           mensagem: v.mensagem,
+          // `tipo` é o que o agendamento procura em todas as empresas
+          tipo: 'honorarios',
+          recorrente: v.recorrente,
           pix: v.pixTipo ? { tipo: v.pixTipo, chave: v.pixChave, nome: v.pixNome, cidade: v.pixCidade } : null,
           atualizadoEm: serverTimestamp(),
         },
@@ -356,12 +363,19 @@ function HonorariosCard() {
           <Campo label="Telefone" className="sm:col-span-3">
             <Input {...escritorio.register('telefone')} />
           </Campo>
-          <Campo label="Honorário mensal (R$)" className="sm:col-span-3">
+          <Campo label="Honorário mensal (R$)" className="sm:col-span-3" erro={escritorio.formState.errors.valorMensal?.message}>
             <Input inputMode="decimal" {...escritorio.register('valorMensal')} />
           </Campo>
           <Campo label="Dia do vencimento" className="sm:col-span-3" erro={escritorio.formState.errors.diaVencimento?.message}>
             <Input inputMode="numeric" {...escritorio.register('diaVencimento')} />
           </Campo>
+          <label className="flex items-start gap-2 text-sm text-slate-700 sm:col-span-6">
+            <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300" {...escritorio.register('recorrente')} />
+            <span>
+              Gerar o recibo sozinho todo mês
+              <span className="block text-xs text-slate-500">Com o valor e o dia de vencimento acima. O recibo do mês aparece em Guias a pagar; se já existir um daquela competência, nada é duplicado.</span>
+            </span>
+          </label>
           <Campo label="Mensagem no recibo" className="sm:col-span-6" erro={escritorio.formState.errors.mensagem?.message}>
             <Input placeholder="Pagamento até a data de vencimento." {...escritorio.register('mensagem')} />
           </Campo>

@@ -261,6 +261,7 @@ export type OperacaoAuditada =
   | 'contabil_extrato'
   | 'contabil_lancamento'
   | 'contabil_periodo'
+  | 'contrato_gerado'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -299,6 +300,7 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   contabil_extrato: 'Extrato bancário importado',
   contabil_lancamento: 'Lançamento contábil',
   contabil_periodo: 'Período contábil encerrado ou reaberto',
+  contrato_gerado: 'Contrato de serviços gerado',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */
@@ -445,6 +447,10 @@ export interface ConfiguracaoHonorarios {
   valorMensal?: number | null
   diaVencimento?: number | null
   mensagem?: string
+  /** Marca o documento para o agendamento achar (collection group) */
+  tipo?: 'honorarios'
+  /** Gera sozinho o recibo de cada mês, com o valor e o dia de vencimento combinados */
+  recorrente?: boolean
   pix?: { tipo: TipoChavePix; chave: string; nome?: string; cidade: string } | null
   proximoNumero?: number
 }
