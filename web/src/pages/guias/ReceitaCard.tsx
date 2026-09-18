@@ -110,7 +110,10 @@ export function ReceitaCard() {
 
   const resumo = (tipo: string, g: GuiaGerada) =>
     `${tipo} emitido pela Receita${g.valor ? `: ${formatBRL(g.valor)}` : ''}${g.vencimento ? `, pagar até ${dataBr(g.vencimento)}` : ''}${g.nova ? '' : ' (já estava na lista; atualizado)'}. ` +
-    `${[...(g.observacoes ?? []), ...g.avisos].join(' ')}`
+    'A guia está na lista abaixo, com a linha digitável e o PDF.' +
+    // as observações vêm da própria Receita, às vezes como código curto: rotuladas, para não parecerem texto solto
+    (g.observacoes?.length ? ` Observações da Receita: ${g.observacoes.join(' · ')}.` : '') +
+    (g.avisos.length ? ` ${g.avisos.join(' ')}` : '')
 
   async function gerarDas(v: FormDas) {
     const r = await executar<GuiaGerada>('das', 'gerarDasReceita', { periodo: v.periodo })
