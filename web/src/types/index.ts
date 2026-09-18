@@ -246,6 +246,7 @@ export type OperacaoAuditada =
   | 'folha_fechada'
   | 'folha_reaberta'
   | 'esocial_enviado'
+  | 'obrigacao_marcada'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -270,6 +271,7 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   folha_fechada: 'Folha fechada',
   folha_reaberta: 'Folha reaberta',
   esocial_enviado: 'Envio ao eSocial',
+  obrigacao_marcada: 'Obrigação marcada no checklist',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */

@@ -26,13 +26,13 @@ service cloud.firestore {
         && get(membroPath(empresaId)).data.papel == 'admin';
     }
 
-    // Perfil do usuário. `empresaId` guarda apenas a última empresa aberta — o acesso de
-    // verdade vem de /empresas/{id}/membros/{uid}.
     // Links de guia compartilhada: só o backend lê e escreve. O token é a própria chave do documento.
     match /compartilhamentos/{token} {
       allow read, write: if false;
     }
 
+    // Perfil do usuário. `empresaId` guarda apenas a última empresa aberta — o acesso de
+    // verdade vem de /empresas/{id}/membros/{uid}.
     match /usuarios/{uid} {
       allow read, create, update: if logado() && request.auth.uid == uid;
       allow delete: if false;
@@ -87,6 +87,8 @@ service cloud.firestore {
       match /notasServico/{doc=**}          { allow read: if ehMembro(empresaId); allow write: if false; }
       // guias a pagar: o PDF é lido e gravado pelo backend; a baixa de pagamento também passa por lá
       match /guias/{doc=**}                 { allow read: if ehMembro(empresaId); allow write: if false; }
+      // checklist de obrigações: a marcação passa pelo backend, que registra quem marcou
+      match /obrigacoes/{doc=**}            { allow read: if ehMembro(empresaId); allow write: if false; }
 
       // Folha de pagamento: CPF e salário são dado pessoal — só administradores.
       // Cadastro e rubricas o admin edita; folha e holerites só o backend grava (o cálculo é dele).

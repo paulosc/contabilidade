@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { Building2, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
+import { Briefcase, Building2, Calculator, CalendarCheck, Check, ChevronsUpDown, FileSpreadsheet, Landmark, LayoutDashboard, LogOut, Menu, Plus, ScanLine, Settings, Users, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { Alerta } from '../ui'
 import { cn, formatCpfCnpj } from '../../lib/utils'
@@ -8,9 +8,12 @@ import { PAPEIS } from '../../types'
 import { IconeMarca } from '../Marca'
 
 const itens = [
+  { para: '/carteira', rotulo: 'Carteira de clientes', Icone: Briefcase, fim: undefined },
   { para: '/', rotulo: 'Painel', Icone: LayoutDashboard, fim: true },
+  { para: '/obrigacoes', rotulo: 'Obrigações', Icone: CalendarCheck, fim: undefined },
   { para: '/notas-fiscais', rotulo: 'Notas fiscais (NF-e)', Icone: ScanLine, fim: undefined },
   { para: '/notas-servico', rotulo: 'Notas de serviço', Icone: FileSpreadsheet, fim: undefined },
+  { para: '/simples', rotulo: 'Simples Nacional', Icone: Calculator, fim: undefined },
   { para: '/guias', rotulo: 'Guias a pagar', Icone: Landmark, fim: undefined },
   { para: '/folha', rotulo: 'Folha de pagamento', Icone: Users, fim: undefined },
   { para: '/configuracoes', rotulo: 'Configurações', Icone: Settings, fim: undefined },

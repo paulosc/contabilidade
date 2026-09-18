@@ -96,18 +96,18 @@ async function vinculoDoUsuario(
 
 const empresaDoPedido = (dados: unknown): unknown => (dados as { empresaId?: unknown } | undefined)?.empresaId
 
-async function exigirMembro(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
+export async function exigirMembro(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
   const { id, email } = await vinculoDoUsuario(uid, empresaDoPedido(dados))
   return { id, email }
 }
 
-async function exigirAdmin(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
+export async function exigirAdmin(uid: string | undefined, dados?: unknown): Promise<{ id: string; email?: string }> {
   const { id, papel, email } = await vinculoDoUsuario(uid, empresaDoPedido(dados))
   if (papel !== 'admin') throw new HttpsError('permission-denied', 'Apenas administradores')
   return { id, email }
 }
 
-async function auditar(
+export async function auditar(
   empresaId: string,
   operacao: OperacaoAuditada,
   uid: string,

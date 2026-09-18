@@ -286,6 +286,7 @@ export type OperacaoAuditada =
   | 'folha_fechada'
   | 'folha_reaberta'
   | 'esocial_enviado'
+  | 'obrigacao_marcada'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada
