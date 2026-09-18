@@ -28,6 +28,11 @@ service cloud.firestore {
 
     // Perfil do usuário. `empresaId` guarda apenas a última empresa aberta — o acesso de
     // verdade vem de /empresas/{id}/membros/{uid}.
+    // Links de guia compartilhada: só o backend lê e escreve. O token é a própria chave do documento.
+    match /compartilhamentos/{token} {
+      allow read, write: if false;
+    }
+
     match /usuarios/{uid} {
       allow read, create, update: if logado() && request.auth.uid == uid;
       allow delete: if false;

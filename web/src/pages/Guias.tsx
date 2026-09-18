@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { doc, limit, orderBy, serverTimestamp, setDoc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { Check, ChevronDown, ChevronUp, Copy, FilePlus2, Landmark, Pencil, Save, Trash2, Undo2, Upload, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp, Copy, FilePlus2, Landmark, Pencil, QrCode, Save, Trash2, Undo2, Upload, X } from 'lucide-react'
 import { useAuth } from '../auth/AuthProvider'
 import { db, functions } from '../lib/firebase'
 import { useColecao, useDocumento } from '../services/firestore'
@@ -176,7 +176,15 @@ function DetalheGuia({
 
 // ---------- honorários: dados do escritório e geração do recibo ----------
 
-const esquemaEscritorio = z.object({
+const CHAVES_PIX = {
+  cpf_cnpj: { rotulo: 'CPF ou CNPJ', exemplo: '00.000.000/0001-00', valida: (v: string) => [11, 14].includes(v.replace(/\D/g, '').length) },
+  celular: { rotulo: 'Celular', exemplo: '(35) 99999-0000', valida: (v: string) => [10, 11].includes(v.replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '').length) },
+  email: { rotulo: 'E-mail', exemplo: 'financeiro@escritorio.com.br', valida: (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) },
+  aleatoria: { rotulo: 'Chave aleatória', exemplo: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', valida: (v: string) => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(v) },
+} as const
+
+const esquemaEscritorio = z
+  .object({
   nome: z.string().trim().min(3, 'Informe o nome do escritório ou do contador'),
   documento: z.string().trim(),
   crc: z.string().trim(),
@@ -184,7 +192,16 @@ const esquemaEscritorio = z.object({
   valorMensal: z.string().trim(),
   diaVencimento: z.string().trim().refine((v) => !v || (Number(v) >= 1 && Number(v) <= 31), 'Dia de 1 a 31'),
   mensagem: z.string().trim().max(200, 'No máximo 200 caracteres'),
+  pixTipo: z.enum(['', 'cpf_cnpj', 'celular', 'email', 'aleatoria']),
+  pixChave: z.string().trim(),
+  pixNome: z.string().trim().max(60),
+  pixCidade: z.string().trim().max(40),
 })
+  .superRefine((v, ctx) => {
+    if (!v.pixTipo) return
+    if (!CHAVES_PIX[v.pixTipo].valida(v.pixChave)) ctx.addIssue({ code: 'custom', path: ['pixChave'], message: `Não parece uma chave do tipo ${CHAVES_PIX[v.pixTipo].rotulo}` })
+    if (!v.pixCidade) ctx.addIssue({ code: 'custom', path: ['pixCidade'], message: 'O PIX exige a cidade do recebedor' })
+  })
 type FormEscritorio = z.infer<typeof esquemaEscritorio>
 
 const esquemaRecibo = z.object({
@@ -192,6 +209,7 @@ const esquemaRecibo = z.object({
   valor: z.string().refine((v) => Number(v.replace(/\./g, '').replace(',', '.')) > 0, 'Informe o valor'),
   vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Informe o vencimento'),
   descricao: z.string().trim().max(200),
+  comPix: z.boolean(),
 })
 type FormRecibo = z.infer<typeof esquemaRecibo>
 
@@ -202,6 +220,7 @@ function HonorariosCard() {
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [pronto, setPronto] = useState<string | null>(null)
+  const temPix = Boolean(config?.pix?.chave)
 
   const escritorio = useForm<FormEscritorio>({
     resolver: zodResolver(esquemaEscritorio),
@@ -213,11 +232,15 @@ function HonorariosCard() {
       valorMensal: config?.valorMensal ? config.valorMensal.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '',
       diaVencimento: config?.diaVencimento ? String(config.diaVencimento) : '',
       mensagem: config?.mensagem ?? '',
+      pixTipo: config?.pix?.tipo ?? '',
+      pixChave: config?.pix?.chave ?? '',
+      pixNome: config?.pix?.nome ?? '',
+      pixCidade: config?.pix?.cidade ?? '',
     },
   })
 
   const mesAtual = new Date().toLocaleDateString('en-CA').slice(0, 7)
-  const recibo = useForm<FormRecibo>({ resolver: zodResolver(esquemaRecibo), defaultValues: { competencia: mesAtual, valor: '', vencimento: '', descricao: '' } })
+  const recibo = useForm<FormRecibo>({ resolver: zodResolver(esquemaRecibo), defaultValues: { competencia: mesAtual, valor: '', vencimento: '', descricao: '', comPix: true } })
 
   // o valor e o vencimento combinados viram a sugestão do próximo recibo
   useEffect(() => {
@@ -242,6 +265,7 @@ function HonorariosCard() {
           valorMensal: v.valorMensal ? Number(v.valorMensal.replace(/\./g, '').replace(',', '.')) : null,
           diaVencimento: v.diaVencimento ? Number(v.diaVencimento) : null,
           mensagem: v.mensagem,
+          pix: v.pixTipo ? { tipo: v.pixTipo, chave: v.pixChave, nome: v.pixNome, cidade: v.pixCidade } : null,
           atualizadoEm: serverTimestamp(),
         },
         { merge: true },
@@ -264,6 +288,7 @@ function HonorariosCard() {
         valor: Number(v.valor.replace(/\./g, '').replace(',', '.')),
         vencimento: v.vencimento,
         descricao: v.descricao || undefined,
+        comPix: temPix && v.comPix,
       })
       setPronto(r.data.id)
     } catch (e) {
@@ -274,6 +299,7 @@ function HonorariosCard() {
   }
 
   const configurado = Boolean(config?.emitente?.nome)
+  const pixTipo = escritorio.watch('pixTipo')
 
   return (
     <Card>
@@ -321,6 +347,37 @@ function HonorariosCard() {
           <Campo label="Mensagem no recibo" className="sm:col-span-6" erro={escritorio.formState.errors.mensagem?.message}>
             <Input placeholder="Pagamento até a data de vencimento." {...escritorio.register('mensagem')} />
           </Campo>
+          <div className="mt-1 border-t border-slate-200 pt-3 sm:col-span-6">
+            <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <QrCode className="h-4 w-4" /> PIX para receber os honorários
+            </p>
+            <p className="text-xs text-slate-500">Com a chave cadastrada, o recibo sai com QR Code e PIX copia e cola já no valor cobrado. O dinheiro cai direto na conta da chave.</p>
+          </div>
+          <Campo label="Tipo da chave PIX" className="sm:col-span-3">
+            <Select {...escritorio.register('pixTipo')}>
+              <option value="">Não usar PIX no recibo</option>
+              {Object.entries(CHAVES_PIX).map(([valor, c]) => (
+                <option key={valor} value={valor}>
+                  {c.rotulo}
+                </option>
+              ))}
+            </Select>
+          </Campo>
+          {pixTipo ? (
+            <>
+              <Campo label="Chave PIX" className="sm:col-span-3" erro={escritorio.formState.errors.pixChave?.message} obrigatorio>
+                <Input placeholder={CHAVES_PIX[pixTipo].exemplo} {...escritorio.register('pixChave')} />
+              </Campo>
+              <Campo label="Nome do titular da conta" className="sm:col-span-3" erro={escritorio.formState.errors.pixNome?.message}>
+                <Input placeholder="Em branco: o nome do escritório" {...escritorio.register('pixNome')} />
+              </Campo>
+              <Campo label="Cidade do titular" className="sm:col-span-3" erro={escritorio.formState.errors.pixCidade?.message} obrigatorio>
+                <Input {...escritorio.register('pixCidade')} />
+              </Campo>
+            </>
+          ) : (
+            <div className="hidden sm:col-span-3 sm:block" />
+          )}
           <div className="sm:col-span-6">
             <Botao type="submit" tamanho="sm" carregando={ocupado === 'salvar'}>
               <Save className="h-3.5 w-3.5" /> Salvar dados do escritório
@@ -343,6 +400,21 @@ function HonorariosCard() {
           <Campo label="Descrição" className="sm:col-span-6" dica="Em branco: Honorários contábeis - mês/ano">
             <Input {...recibo.register('descricao')} />
           </Campo>
+          <div className="sm:col-span-6">
+            {temPix ? (
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" className="h-4 w-4 rounded border-slate-300" {...recibo.register('comPix')} />
+                <QrCode className="h-4 w-4 text-slate-500" /> Incluir PIX para pagamento (QR Code e copia e cola) — chave {config?.pix?.chave}
+              </label>
+            ) : (
+              <p className="flex items-center gap-2 text-xs text-slate-500">
+                <QrCode className="h-4 w-4" /> Para o recibo sair com PIX, cadastre a chave em
+                <button type="button" className="font-medium text-slate-700 underline" onClick={() => setEditando(true)}>
+                  Editar dados do escritório
+                </button>
+              </p>
+            )}
+          </div>
           <div className="sm:col-span-6">
             <Botao type="submit" tamanho="sm" carregando={ocupado === 'gerar'}>
               <FilePlus2 className="h-3.5 w-3.5" /> Gerar recibo

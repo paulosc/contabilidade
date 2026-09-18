@@ -276,6 +276,7 @@ export type OperacaoAuditada =
   | 'guia_importada'
   | 'guia_paga'
   | 'guia_excluida'
+  | 'guia_compartilhada'
   | 'recibo_gerado'
   | 'serpro_configurado'
   | 'serpro_removido'
@@ -394,6 +395,8 @@ export interface Guia {
   linhaDigitavel?: string
   codigoBarras?: string
   linhaDigitavelValida?: boolean
+  /** Só no recibo de honorários gerado com PIX: o BR Code estático, para copiar e colar no banco */
+  pixCopiaECola?: string
   composicao: Array<{ codigo: string; denominacao: string; principal: number; total: number }>
   descricao?: string
   emitente?: string
@@ -418,6 +421,8 @@ export interface ConfiguracaoHonorarios {
   valorMensal?: number
   diaVencimento?: number
   mensagem?: string
+  /** Chave PIX do escritório: com ela o recibo sai com QR Code e copia e cola. Não é segredo — vai impressa no recibo. */
+  pix?: { tipo: 'cpf_cnpj' | 'celular' | 'email' | 'aleatoria'; chave: string; nome?: string; cidade: string } | null
   proximoNumero?: number
   atualizadoEm?: Timestamp
 }

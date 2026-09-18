@@ -35,6 +35,8 @@ export {
   marcarGuiaPaga,
   excluirGuia,
   gerarReciboDeHonorarios,
+  linkGuia,
+  guiaCompartilhada,
   salvarCredenciaisSerpro,
   removerCredenciaisSerpro,
   testarSerpro,

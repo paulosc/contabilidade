@@ -6,7 +6,7 @@
  * do mesmo jeito que o módulo de integrações já faz. É isso que garante que a empresa A
  * não alcance documento nenhum da empresa B.
  */
-import { HttpsError, onCall } from 'firebase-functions/v2/https'
+import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { gerarDanfse } from './danfse'
@@ -30,6 +30,7 @@ import {
   salvarCredenciais as salvarCredenciaisDoSerpro,
   testar as testarSerproDaEmpresa,
 } from './serproServico'
+import { abrirLinkDaGuia, criarLinkDaGuia } from './guiasServico'
 import { ErroGuia, excluirGuia as excluirGuiaDaEmpresa, gerarRecibo, importarGuia as importarGuiaDaEmpresa, marcarPagamento, pdfDaGuia } from './guiasServico'
 import { ErroDps, type AmbienteNfse, type DadosDps, type MotivoCancelamento } from './dps'
 import { ErroEmissao, cancelarNfse as cancelarNfseNoSefin, emitirNfse as emitirNfseNoSefin, modeloDeNota, numeracaoAtual } from './emissao'
@@ -823,6 +824,52 @@ export const pdfGuia = onCall({ region: REGIAO, timeoutSeconds: 60 }, async (req
   }
 })
 
+/** Cria um link de 7 dias para a guia, para mandar a quem vai pagar. */
+export const linkGuia = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirMembro(req.auth?.uid, req.data)
+  const { guiaId } = (req.data ?? {}) as { guiaId?: string }
+  if (!guiaId) throw new HttpsError('invalid-argument', 'Informe a guia')
+  try {
+    const { token, expiraEm } = await criarLinkDaGuia(id, req.auth!.uid, guiaId)
+    await auditar(id, 'guia_compartilhada', req.auth!.uid, { email, detalhe: `${guiaId} · link até ${expiraEm.toLocaleDateString('pt-BR')}` })
+    return { url: `https://${process.env.GCLOUD_PROJECT}.web.app/g/${token}`, expiraEm: expiraEm.toISOString() }
+  } catch (e) {
+    return traduzirErroGuia(e)
+  }
+})
+
+const paginaDeAviso = (titulo: string, texto: string) =>
+  `<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">` +
+  `<title>${titulo}</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1.5rem;color:#0f172a">` +
+  `<h1 style="font-size:1.25rem">${titulo}</h1><p style="color:#475569;line-height:1.5">${texto}</p></body></html>`
+
+/**
+ * Entrega o PDF de uma guia compartilhada. Aberta ao público por desenho — quem recebe o link no
+ * WhatsApp não tem login — mas só responde a um token válido e dentro do prazo.
+ */
+export const guiaCompartilhada = onRequest({ region: REGIAO, invoker: 'public', memory: '256MiB' }, async (req, res) => {
+  res.set('X-Robots-Tag', 'noindex, nofollow')
+  res.set('Cache-Control', 'private, no-store')
+  res.set('Referrer-Policy', 'no-referrer')
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.status(405).send('Método não permitido')
+    return
+  }
+  const token = req.path.split('/').filter(Boolean).pop() ?? ''
+  const r = await abrirLinkDaGuia(token)
+  if (r.situacao === 'expirado') {
+    res.status(410).type('html').send(paginaDeAviso('Este link expirou', 'Os links de guia valem por 7 dias. Peça a quem enviou para compartilhar de novo.'))
+    return
+  }
+  if (r.situacao !== 'ok') {
+    res.status(404).type('html').send(paginaDeAviso('Link inválido', 'Este endereço não corresponde a nenhuma guia compartilhada.'))
+    return
+  }
+  res.set('Content-Type', 'application/pdf')
+  res.set('Content-Disposition', `inline; filename="${r.nomeArquivo.replace(/[^A-Za-z0-9._-]/g, '_')}"`)
+  res.status(200).send(r.pdf)
+})
+
 /** Baixa de pagamento: qualquer membro da empresa marca (é o cliente quem paga). */
 export const marcarGuiaPaga = onCall({ region: REGIAO }, async (req) => {
   const { id, email } = await exigirMembro(req.auth?.uid, req.data)
@@ -853,11 +900,11 @@ export const excluirGuia = onCall({ region: REGIAO }, async (req) => {
 /** Gera o recibo de honorários do escritório — este o sistema emite, é documento próprio. */
 export const gerarReciboDeHonorarios = onCall({ region: REGIAO, timeoutSeconds: 60, memory: '512MiB' }, async (req) => {
   const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
-  const { competencia, valor, vencimento, descricao } = (req.data ?? {}) as { competencia?: string; valor?: number; vencimento?: string; descricao?: string }
+  const { competencia, valor, vencimento, descricao, comPix } = (req.data ?? {}) as { competencia?: string; valor?: number; vencimento?: string; descricao?: string; comPix?: boolean | null }
   if (!competencia || !vencimento || typeof valor !== 'number') throw new HttpsError('invalid-argument', 'Informe competência, valor e vencimento')
   try {
-    const r = await gerarRecibo(id, req.auth!.uid, { competencia, valor, vencimento, descricao })
-    await auditar(id, 'recibo_gerado', req.auth!.uid, { email, detalhe: `nº ${r.numero} · ${competencia}` })
+    const r = await gerarRecibo(id, req.auth!.uid, { competencia, valor, vencimento, descricao, comPix: comPix !== false })
+    await auditar(id, 'recibo_gerado', req.auth!.uid, { email, detalhe: `nº ${r.numero} · ${competencia}${r.comPix ? ' · com PIX' : ''}` })
     return r
   } catch (e) {
     return traduzirErroGuia(e)

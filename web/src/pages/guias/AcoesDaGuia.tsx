@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { httpsCallable } from 'firebase/functions'
-import { Check, CircleCheck, Copy, Download, MessageCircle, X } from 'lucide-react'
+import { Check, CircleCheck, Copy, Download, MessageCircle, QrCode, X } from 'lucide-react'
 import { functions } from '../../lib/firebase'
 import { useDocumento } from '../../services/firestore'
 import { Botao } from '../../components/ui'
@@ -20,6 +20,7 @@ async function buscarPdf(guiaId: string) {
 export function AcoesDaGuia({ guia, aoAvisar }: { guia: ComId<Guia>; aoAvisar?: (texto: string, erro?: boolean) => void }) {
   const [ocupado, setOcupado] = useState<'pdf' | 'whatsapp' | null>(null)
   const [copiado, setCopiado] = useState(false)
+  const [pixCopiado, setPixCopiado] = useState(false)
 
   async function baixar() {
     setOcupado('pdf')
@@ -36,10 +37,11 @@ export function AcoesDaGuia({ guia, aoAvisar }: { guia: ComId<Guia>; aoAvisar?: 
   async function whatsapp() {
     setOcupado('whatsapp')
     try {
-      const pdf = await buscarPdf(guia.id)
-      const como = await compartilharNoWhatsApp(guia, pdf.pdfBase64, pdf.nomeArquivo)
-      if (como === 'texto') {
-        aoAvisar?.('Abri o WhatsApp com a mensagem pronta e baixei o PDF. Escolha a conversa e anexe o arquivo pelo clipe (Documento) — o WhatsApp Web não aceita arquivo vindo de outro site.')
+      const como = await compartilharNoWhatsApp(guia, () => buscarPdf(guia.id))
+      if (como === 'link') {
+        aoAvisar?.('Abri o WhatsApp com a mensagem pronta. Ela leva um link do PDF, válido por 7 dias — quem receber é só tocar para abrir o documento.')
+      } else if (como === 'texto') {
+        aoAvisar?.('Não consegui criar o link agora: abri o WhatsApp só com o texto e baixei o PDF — anexe o arquivo pelo clipe (Documento).', true)
       }
     } catch (e) {
       aoAvisar?.(e instanceof Error ? e.message : 'Não foi possível compartilhar.', true)
@@ -55,6 +57,13 @@ export function AcoesDaGuia({ guia, aoAvisar }: { guia: ComId<Guia>; aoAvisar?: 
     setTimeout(() => setCopiado(false), 2000)
   }
 
+  async function copiarPix() {
+    if (!guia.pixCopiaECola) return
+    await navigator.clipboard.writeText(guia.pixCopiaECola)
+    setPixCopiado(true)
+    setTimeout(() => setPixCopiado(false), 2000)
+  }
+
   return (
     <div className="flex flex-wrap gap-2">
       <Botao tamanho="sm" carregando={ocupado === 'pdf'} onClick={() => void baixar()}>
@@ -66,6 +75,11 @@ export function AcoesDaGuia({ guia, aoAvisar }: { guia: ComId<Guia>; aoAvisar?: 
       {guia.linhaDigitavel && (
         <Botao tamanho="sm" variante="secundario" onClick={() => void copiar()}>
           {copiado ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copiado ? 'Linha copiada' : 'Copiar linha digitável'}
+        </Botao>
+      )}
+      {guia.pixCopiaECola && (
+        <Botao tamanho="sm" variante="secundario" onClick={() => void copiarPix()}>
+          {pixCopiado ? <Check className="h-3.5 w-3.5" /> : <QrCode className="h-3.5 w-3.5" />} {pixCopiado ? 'PIX copiado' : 'Copiar PIX copia e cola'}
         </Botao>
       )}
     </div>
@@ -112,7 +126,10 @@ export function GuiaPronta({ guiaId, observacoes, aoFechar }: { guiaId: string; 
       <p className="mt-3 text-xs text-emerald-800">
         {guia.origem === 'gerada' ? (
           <>
-            <strong>O que fazer agora:</strong> baixe o PDF ou mande pelo WhatsApp para o cliente. É um recibo, sem código de barras: o pagamento é combinado à parte (PIX, transferência).
+            <strong>O que fazer agora:</strong> baixe o PDF ou mande pelo WhatsApp para o cliente.{' '}
+            {guia.pixCopiaECola
+              ? 'O recibo leva o QR Code do PIX no valor cobrado, e a mensagem do WhatsApp leva o PIX copia e cola. O PIX cai direto na conta da chave: confira o extrato e marque a guia como paga.'
+              : 'É um recibo, sem código de barras: o pagamento é combinado à parte (PIX, transferência).'}
           </>
         ) : (
           <>

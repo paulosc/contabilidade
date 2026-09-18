@@ -7,6 +7,7 @@
  * entregam hoje.
  */
 import PDFDocument from 'pdfkit'
+import QRCode from 'qrcode'
 import { join } from 'node:path'
 import { valorPorExtenso } from './guias'
 
@@ -31,6 +32,8 @@ export interface DadosRecibo {
   descricao: string
   valor: number
   mensagem?: string
+  /** Com PIX: QR Code e copia e cola no pé do recibo */
+  pix?: { copiaECola: string; chave: string; recebedor: string }
 }
 
 const dataBr = (iso: string) => iso.replace(/^(\d{4})-(\d{2})-(\d{2}).*$/, '$3/$2/$1')
@@ -138,6 +141,27 @@ export async function gerarReciboHonorarios(d: DadosRecibo): Promise<Buffer> {
   caixa(x0, y, largura, hExtenso)
   doc.font('Sans').fontSize(8).text('Valor total por extenso:', x0 + 4, y + 3, { lineBreak: false })
   doc.fontSize(9).text(`( ${maiuscula(valorPorExtenso(d.valor))} )`, x0 + 4, y + 14, { width: largura - 8, lineBreak: false, ellipsis: true })
+  y += hExtenso + 4
+
+  // ---- PIX ----
+  if (d.pix) {
+    const hPix = cm(4.2)
+    const lado = cm(3.6)
+    caixa(x0, y, largura, hPix)
+    const qr = await QRCode.toBuffer(d.pix.copiaECola, { errorCorrectionLevel: 'M', margin: 0, scale: 8 })
+    doc.image(qr, x0 + cm(0.3), y + cm(0.3), { width: lado, height: lado })
+    const xTexto = x0 + lado + cm(0.8)
+    const wTexto = largura - lado - cm(1.1)
+    doc.font('SansBold').fontSize(12).text('Pague com PIX', xTexto, y + 8, { width: wTexto, lineBreak: false })
+    doc.font('Sans').fontSize(8.5).text('Aponte a câmera do aplicativo do banco para o QR Code, ou use o PIX copia e cola abaixo.', xTexto, y + 24, { width: wTexto, lineBreak: false, ellipsis: true })
+    doc.fontSize(9)
+    doc.text(`Valor: R$ ${moeda(d.valor)}        Chave: ${d.pix.chave}`, xTexto, y + 39, { width: wTexto, lineBreak: false, ellipsis: true })
+    doc.text(`Recebedor: ${d.pix.recebedor}`, xTexto, y + 51, { width: wTexto, lineBreak: false, ellipsis: true })
+    doc.fontSize(8).text('PIX copia e cola:', xTexto, y + 67, { lineBreak: false })
+    doc.fontSize(7).text(d.pix.copiaECola, xTexto, y + 78, { width: wTexto, height: hPix - 84, ellipsis: true })
+    doc.fontSize(7).fillColor('#444').text('Confira o nome do recebedor no aplicativo do banco antes de confirmar o pagamento.', x0, y + hPix + 3, { width: largura, align: 'center', lineBreak: false })
+    doc.fillColor('#000')
+  }
 
   doc.end()
   await fim

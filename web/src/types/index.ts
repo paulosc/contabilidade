@@ -236,6 +236,7 @@ export type OperacaoAuditada =
   | 'guia_importada'
   | 'guia_paga'
   | 'guia_excluida'
+  | 'guia_compartilhada'
   | 'recibo_gerado'
   | 'serpro_configurado'
   | 'serpro_removido'
@@ -259,6 +260,7 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   guia_importada: 'Guia importada',
   guia_paga: 'Pagamento de guia',
   guia_excluida: 'Guia excluída',
+  guia_compartilhada: 'Guia compartilhada por link',
   recibo_gerado: 'Recibo de honorários gerado',
   serpro_configurado: 'Integra Contador configurado',
   serpro_removido: 'Integra Contador removido',
@@ -393,6 +395,8 @@ export interface Guia {
   emitente?: string
   observacoes?: string
   avisos: string[]
+  /** Recibo de honorários com PIX: o código para copiar e colar no banco */
+  pixCopiaECola?: string
   status: 'pendente' | 'paga'
   pagaEm?: Timestamp
   pagaPor?: string
@@ -408,8 +412,11 @@ export interface ConfiguracaoHonorarios {
   valorMensal?: number | null
   diaVencimento?: number | null
   mensagem?: string
+  pix?: { tipo: TipoChavePix; chave: string; nome?: string; cidade: string } | null
   proximoNumero?: number
 }
+
+export type TipoChavePix = 'cpf_cnpj' | 'celular' | 'email' | 'aleatoria'
 
 // ---------- folha de pagamento ----------
 

@@ -6,11 +6,12 @@
  * /empresas/{id}/guias/{id}. O id é o número do documento: reenviar a mesma guia não duplica.
  */
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { extractText, getDocumentProxy } from 'unpdf'
 import { db, storage } from '../lib/admin'
 import { idDaGuia, lerGuia, type GuiaLida } from './guias'
 import { caminhoGuia, configFiscalRef, configHonorariosRef, guiasRef, type ConfiguracaoFiscal, type ConfiguracaoHonorarios, type Guia } from './modelo'
+import { ErroPix, gerarPixCopiaECola, normalizarChavePix } from './pix'
 import { gerarReciboHonorarios } from './reciboHonorarios'
 
 export class ErroGuia extends Error {}
@@ -160,10 +161,12 @@ export interface PedidoRecibo {
   /** 'AAAA-MM-DD' */
   vencimento: string
   descricao?: string
+  /** false = recibo sem PIX mesmo com chave cadastrada */
+  comPix?: boolean
 }
 
 /** Gera o recibo de honorários do mês e o coloca entre as guias a pagar da empresa. */
-export async function gerarRecibo(empresaId: string, uid: string, pedido: PedidoRecibo): Promise<{ id: string; numero: string }> {
+export async function gerarRecibo(empresaId: string, uid: string, pedido: PedidoRecibo): Promise<{ id: string; numero: string; comPix: boolean }> {
   if (!/^\d{4}-\d{2}$/.test(pedido.competencia)) throw new ErroGuia('Competência inválida.')
   if (!/^\d{4}-\d{2}-\d{2}$/.test(pedido.vencimento)) throw new ErroGuia('Vencimento inválido.')
   if (!(pedido.valor > 0)) throw new ErroGuia('O valor precisa ser maior que zero.')
@@ -184,6 +187,20 @@ export async function gerarRecibo(empresaId: string, uid: string, pedido: Pedido
   const descricao = pedido.descricao?.trim() || `Honorários contábeis - ${mes}/${ano}`
   const emissao = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
   const cnpj = empresa?.cnpj?.replace(/\D/g, '')
+
+  // PIX: QR estático com o valor do recibo; o identificador aparece no extrato de quem recebe
+  let pix: { copiaECola: string; chave: string; recebedor: string } | undefined
+  if (pedido.comPix !== false && config.pix?.chave?.trim()) {
+    try {
+      const chave = normalizarChavePix(config.pix.tipo, config.pix.chave)
+      const recebedor = config.pix.nome?.trim() || config.emitente.nome
+      pix = { chave, recebedor, copiaECola: gerarPixCopiaECola({ chave, nome: recebedor, cidade: config.pix.cidade ?? '', valor: pedido.valor, identificador: `HON${numero}` }) }
+    } catch (e) {
+      if (e instanceof ErroPix) throw new ErroGuia(`${e.message} Corrija em "Editar dados do escritório".`)
+      throw e
+    }
+  }
+
   const pdf = await gerarReciboHonorarios({
     emitente: config.emitente,
     cliente: {
@@ -197,6 +214,7 @@ export async function gerarRecibo(empresaId: string, uid: string, pedido: Pedido
     descricao,
     valor: pedido.valor,
     mensagem: config.mensagem,
+    pix,
   })
 
   const id = `hon-${numero}`
@@ -214,6 +232,7 @@ export async function gerarRecibo(empresaId: string, uid: string, pedido: Pedido
         vencimentoEm: timestampDoDia(pedido.vencimento),
         emissao,
         valor: pedido.valor,
+        pixCopiaECola: pix?.copiaECola,
         composicao: [],
         descricao,
         emitente: config.emitente.nome,
@@ -228,5 +247,52 @@ export async function gerarRecibo(empresaId: string, uid: string, pedido: Pedido
         atualizadoEm: agora,
       }),
     )
-  return { id, numero }
+  return { id, numero, comPix: Boolean(pix) }
+}
+
+// ---------- link de compartilhamento ----------
+
+/**
+ * Link para mandar a guia a quem vai pagar (WhatsApp Web não aceita arquivo vindo de outro site).
+ *
+ * Não é URL do Storage — ele continua fechado. É um token aleatório de 32 bytes guardado em
+ * /compartilhamentos/{token} (negado a todo cliente), que vale 7 dias e só dá acesso àquela guia.
+ * Quem abre o link recebe o PDF por uma function, que confere a validade a cada acesso.
+ */
+const VALIDADE_DO_LINK_MS = 7 * 24 * 60 * 60 * 1000
+const compartilhamentosRef = () => db.collection('compartilhamentos')
+
+export async function criarLinkDaGuia(empresaId: string, uid: string, guiaId: string): Promise<{ token: string; expiraEm: Date }> {
+  const guia = (await guiasRef(empresaId).doc(guiaId).get()).data() as Guia | undefined
+  if (!guia) throw new ErroGuia('Guia não encontrada nesta empresa.')
+  if (!guia.storagePath?.startsWith(`empresas/${empresaId}/guias/`)) throw new ErroGuia('O arquivo desta guia não está disponível.')
+  const token = randomBytes(32).toString('base64url')
+  const expiraEm = new Date(Date.now() + VALIDADE_DO_LINK_MS)
+  await compartilhamentosRef().doc(token).set({
+    empresaId,
+    guiaId,
+    criadoPor: uid,
+    criadoEm: FieldValue.serverTimestamp(),
+    expiraEm: Timestamp.fromDate(expiraEm),
+    acessos: 0,
+  })
+  return { token, expiraEm }
+}
+
+export type GuiaCompartilhada = { situacao: 'ok'; pdf: Buffer; nomeArquivo: string } | { situacao: 'invalido' | 'expirado' }
+
+export async function abrirLinkDaGuia(token: string): Promise<GuiaCompartilhada> {
+  if (!/^[A-Za-z0-9_-]{40,50}$/.test(token)) return { situacao: 'invalido' }
+  const ref = compartilhamentosRef().doc(token)
+  const c = (await ref.get()).data() as { empresaId: string; guiaId: string; expiraEm: Timestamp } | undefined
+  if (!c) return { situacao: 'invalido' }
+  if (c.expiraEm.toMillis() < Date.now()) return { situacao: 'expirado' }
+  try {
+    const r = await pdfDaGuia(c.empresaId, c.guiaId)
+    await ref.set({ acessos: FieldValue.increment(1), ultimoAcessoEm: FieldValue.serverTimestamp() }, { merge: true })
+    return { situacao: 'ok', ...r }
+  } catch {
+    // guia excluída depois de compartilhada
+    return { situacao: 'invalido' }
+  }
 }
