@@ -78,6 +78,7 @@ export {
   lancarContabil,
   excluirLancamentoContabil,
   demonstracoesContabeis,
+  razaoContabil,
   fecharPeriodoContabil,
 } from './contabil'
 export { registrarLucroDistribuido, excluirLucroDistribuido } from './folha/lucrosServico'

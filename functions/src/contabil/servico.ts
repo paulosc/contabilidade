@@ -13,7 +13,7 @@ import { db } from '../lib/admin'
 import { raizRef } from '../fiscal/modelo'
 import { decodificarOfx, lerOfx, ErroOfx } from './ofx'
 import { PLANO_PADRAO, ancestrais, grupoDoCodigo, naturezaPadrao, type Conta, type LinhaDre } from './planoDeContas'
-import { ErroContabil, balancete, dre, lancamentoDoExtrato, normalizarMemo, sugerirConta, validarLancamento, type Balancete, type Dre, type Lancamento, type RegraDeConciliacao } from './razao'
+import { ErroContabil, balancete, balancoPatrimonial, dre, razaoDaConta, lancamentoDoExtrato, normalizarMemo, sugerirConta, validarLancamento, type Balancete, type BalancoPatrimonial, type Dre, type RazaoDaConta, type Lancamento, type RegraDeConciliacao } from './razao'
 
 export { ErroContabil, ErroOfx }
 
@@ -237,6 +237,7 @@ export async function ignorarMovimento(empresaId: string, extratoId: string, ign
 export interface Demonstracoes {
   balancete: Balancete
   dre: Dre
+  balanco: BalancoPatrimonial
   lancamentos: number
   fechadoAte?: string
 }
@@ -245,7 +246,18 @@ export async function demonstracoes(empresaId: string, de: string, ate: string):
   if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate) || de > ate) throw new ErroContabil('Período inválido.')
   const [contas, snap, config] = await Promise.all([lerContas(empresaId), lancamentosRef(empresaId).where('data', '<=', ate).select('data', 'historico', 'partidas').get(), configRef(empresaId).get()])
   const lancamentos = snap.docs.map((d) => d.data() as Lancamento)
-  return { balancete: balancete(contas, lancamentos, de, ate), dre: dre(contas, lancamentos, de, ate), lancamentos: lancamentos.filter((l) => l.data >= de).length, fechadoAte: config.data()?.fechadoAte as string | undefined }
+  return { balancete: balancete(contas, lancamentos, de, ate), dre: dre(contas, lancamentos, de, ate), balanco: balancoPatrimonial(contas, lancamentos, ate), lancamentos: lancamentos.filter((l) => l.data >= de).length, fechadoAte: config.data()?.fechadoAte as string | undefined }
+}
+
+/** Razão de uma conta no período. A data é filtrada em memória: `array-contains` + faixa pediria índice composto. */
+export async function razao(empresaId: string, codigo: string, de: string, ate: string): Promise<RazaoDaConta & { nome: string }> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(de) || !/^\d{4}-\d{2}-\d{2}$/.test(ate) || de > ate) throw new ErroContabil('Período inválido.')
+  if (!codigo) throw new ErroContabil('Informe a conta.')
+  const conta = (await contasRef(empresaId).doc(codigo).get()).data() as Conta | undefined
+  if (!conta) throw new ErroContabil('Conta não encontrada no plano desta empresa.')
+  if (!conta.analitica) throw new ErroContabil('O razão é de conta analítica. Escolha uma das contas abaixo deste grupo.')
+  const snap = await lancamentosRef(empresaId).where('contas', 'array-contains', codigo).select('data', 'historico', 'partidas').get()
+  return { ...razaoDaConta(conta, snap.docs.map((d) => d.data() as Lancamento), de, ate), nome: conta.nome }
 }
 
 /** Encerra (ou reabre, com `null`) o período: lançamentos até a data ficam travados. */

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CircleCheck, Lock, LockOpen, Printer, TriangleAlert } from 'lucide-react'
+import { CircleCheck, Lock, LockOpen, Printer, TriangleAlert, X } from 'lucide-react'
 import { useAuth } from '../../auth/AuthProvider'
 import { confirmar } from '../../components/Dialogo'
 import { Alerta, Botao, Campo, Card, Input, Spinner } from '../../components/ui'
 import { formatBRL } from '../../lib/utils'
 import { dataBr } from '../../lib/escritorio'
-import { LINHAS_DRE, chamar, mensagem, type Demonstracoes, type LinhaDre } from '../../lib/contabil'
+import { LINHAS_DRE, chamar, mensagem, type Demonstracoes, type LinhaBalancete, type LinhaDre, type Razao } from '../../lib/contabil'
 
 const iso = (d: Date) => d.toLocaleDateString('en-CA')
 const mesPassado = () => {
@@ -35,7 +35,33 @@ function LinhaDaDre({ rotulo, valor, forte, subtrai, detalhe }: { rotulo: string
   )
 }
 
-/** Balancete de verificação e DRE do período, calculados no backend a partir dos lançamentos. */
+function ColunaDoBalanco({ titulo, linhas, total, extra }: { titulo: string; linhas: LinhaBalancete[]; total: number; extra?: { rotulo: string; valor: number } }) {
+  return (
+    <div>
+      <p className="border-b border-slate-200 px-4 py-2 text-sm font-semibold text-slate-800">{titulo}</p>
+      <ul className="text-sm">
+        {linhas.map((l) => (
+          <li key={l.codigo} className={`flex justify-between gap-3 py-1 pr-4 ${l.analitica ? '' : 'font-medium'}`} style={{ paddingLeft: `${1 + (l.nivel - 1) * 0.8}rem` }}>
+            <span>{l.nome}</span>
+            <span className={`tabular-nums ${l.saldoFinal < 0 ? 'text-red-700' : ''}`}>{formatBRL(l.saldoFinal)}</span>
+          </li>
+        ))}
+        {extra && (
+          <li className="flex justify-between gap-3 py-1 pr-4 pl-4 font-medium">
+            <span>{extra.rotulo}</span>
+            <span className={`tabular-nums ${extra.valor < 0 ? 'text-red-700' : ''}`}>{formatBRL(extra.valor)}</span>
+          </li>
+        )}
+      </ul>
+      <p className="mt-1 flex justify-between border-t border-slate-300 px-4 py-2 text-sm font-semibold">
+        <span>Total</span>
+        <span className="tabular-nums">{formatBRL(total)}</span>
+      </p>
+    </div>
+  )
+}
+
+/** Balancete de verificação, DRE e balanço do período, calculados no backend a partir dos lançamentos. */
 export function DemonstracoesTab() {
   const { empresa, membro } = useAuth()
   const ehAdmin = membro?.papel === 'admin'
@@ -44,6 +70,8 @@ export function DemonstracoesTab() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [fechando, setFechando] = useState(false)
+  const [razao, setRazao] = useState<Razao | null>(null)
+  const [abrindoRazao, setAbrindoRazao] = useState<string | null>(null)
 
   const carregar = useCallback(async () => {
     if (!periodo.de || !periodo.ate) return
@@ -59,8 +87,21 @@ export function DemonstracoesTab() {
   }, [periodo])
 
   useEffect(() => {
+    setRazao(null)
     void carregar()
   }, [carregar, empresa?.id])
+
+  async function abrirRazao(conta: string) {
+    setAbrindoRazao(conta)
+    setErro(null)
+    try {
+      setRazao(await chamar<Razao>('razaoContabil', { conta, ...periodo }))
+    } catch (e) {
+      setErro(mensagem(e, 'Não foi possível abrir o razão.'))
+    } finally {
+      setAbrindoRazao(null)
+    }
+  }
 
   async function encerrar(ate: string | null) {
     const pergunta = ate ? `Encerrar o período até ${dataBr(ate)}? Lançamentos até essa data não poderão mais ser criados, excluídos nem desfeitos.` : 'Reabrir o período? Os lançamentos voltam a poder ser alterados.'
@@ -80,6 +121,7 @@ export function DemonstracoesTab() {
   const b = dados?.balancete
   const d = dados?.dre
   const daLinha = (linha: LinhaDre) => d?.contas.filter((c) => c.linha === linha)
+  const bp = dados?.balanco
 
   return (
     <>
@@ -177,7 +219,15 @@ export function DemonstracoesTab() {
                     {b.linhas.map((l) => (
                       <tr key={l.codigo} className={l.analitica ? '' : 'bg-slate-50/70 font-medium'}>
                         <td className="py-1.5 pr-4" style={{ paddingLeft: `${1 + (l.nivel - 1) * 0.9}rem` }}>
-                          <span className="text-slate-500">{l.codigo}</span> {l.nome}
+                          {l.analitica ? (
+                            <button type="button" className="text-left hover:underline disabled:opacity-60" disabled={abrindoRazao === l.codigo} onClick={() => void abrirRazao(l.codigo)} title="Ver o razão desta conta">
+                              <span className="text-slate-500">{l.codigo}</span> {l.nome}
+                            </button>
+                          ) : (
+                            <>
+                              <span className="text-slate-500">{l.codigo}</span> {l.nome}
+                            </>
+                          )}
                         </td>
                         <td className="px-4 py-1.5 text-right tabular-nums">{formatBRL(l.saldoAnterior)}</td>
                         <td className="px-4 py-1.5 text-right tabular-nums">{l.debitos ? formatBRL(l.debitos) : '—'}</td>
@@ -199,10 +249,94 @@ export function DemonstracoesTab() {
               </div>
             )}
             <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
-              Os saldos saem na natureza de cada conta: valor positivo é o lado normal dela (devedor no ativo e nas despesas, credor no passivo e nas receitas); em vermelho, saldo invertido — costuma ser conta classificada errado na
+              Clique numa conta para ver o razão dela. Os saldos saem na natureza de cada conta: valor positivo é o lado normal dela (devedor no ativo e nas despesas, credor no passivo e nas receitas); em vermelho, saldo invertido — costuma ser conta classificada errado na
               conciliação.
             </p>
           </Card>
+
+          {razao && (
+            <Card className="mt-4 p-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+                <h2 className="text-base font-semibold">
+                  Razão — {razao.conta} {razao.nome}
+                </h2>
+                <button type="button" onClick={() => setRazao(null)} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 print:hidden" aria-label="Fechar o razão">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs text-slate-500">
+                    <tr>
+                      <th className="px-4 py-2 font-medium">Data</th>
+                      <th className="px-4 py-2 font-medium">Histórico</th>
+                      <th className="px-4 py-2 text-right font-medium">Débito</th>
+                      <th className="px-4 py-2 text-right font-medium">Crédito</th>
+                      <th className="px-4 py-2 text-right font-medium">Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    <tr className="text-slate-500">
+                      <td className="px-4 py-1.5" colSpan={4}>
+                        Saldo anterior
+                      </td>
+                      <td className="px-4 py-1.5 text-right tabular-nums">{formatBRL(razao.saldoAnterior)}</td>
+                    </tr>
+                    {razao.movimentos.map((m, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-1.5 whitespace-nowrap">{dataBr(m.data)}</td>
+                        <td className="px-4 py-1.5">
+                          {m.historico} <span className="text-xs text-slate-500">· {m.contrapartidas.join(', ')}</span>
+                        </td>
+                        <td className="px-4 py-1.5 text-right tabular-nums">{m.debito ? formatBRL(m.debito) : '—'}</td>
+                        <td className="px-4 py-1.5 text-right tabular-nums">{m.credito ? formatBRL(m.credito) : '—'}</td>
+                        <td className={`px-4 py-1.5 text-right tabular-nums ${m.saldo < 0 ? 'text-red-700' : ''}`}>{formatBRL(m.saldo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-300 font-semibold">
+                      <td className="px-4 py-2" colSpan={2}>
+                        Total do período
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums">{formatBRL(razao.totalDebitos)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{formatBRL(razao.totalCreditos)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{formatBRL(razao.saldoFinal)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {bp && bp.totalAtivo + bp.totalPassivo + bp.totalPatrimonioLiquido !== 0 && (
+            <Card className="mt-4 p-0">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
+                <h2 className="text-base font-semibold">Balanço patrimonial em {dataBr(bp.ate)}</h2>
+                {!bp.confere && (
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-red-700">
+                    <TriangleAlert className="h-4 w-4" /> Não fecha — avise o suporte
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0">
+                <ColunaDoBalanco titulo="Ativo" linhas={bp.ativo.filter((l) => l.codigo !== '1')} total={bp.totalAtivo} />
+                <div>
+                  <ColunaDoBalanco titulo="Passivo" linhas={bp.passivo} total={bp.totalPassivo} />
+                  <ColunaDoBalanco
+                    titulo="Patrimônio líquido"
+                    linhas={bp.patrimonioLiquido.filter((l) => l.codigo !== '2.3')}
+                    total={bp.totalPatrimonioLiquido}
+                    extra={{ rotulo: bp.resultadoAcumulado >= 0 ? 'Lucro acumulado ainda não transferido' : 'Prejuízo acumulado ainda não transferido', valor: bp.resultadoAcumulado }}
+                  />
+                </div>
+              </div>
+              <p className="border-t border-slate-200 px-4 py-3 text-xs text-slate-500">
+                O resultado aparece dentro do patrimônio líquido como "ainda não transferido" porque o sistema não faz sozinho o lançamento de encerramento do exercício (zerar receitas e despesas contra Lucros acumulados). Faça-o em
+                Lançamentos ao fechar o ano.
+              </p>
+            </Card>
+          )}
         </>
       )}
     </>

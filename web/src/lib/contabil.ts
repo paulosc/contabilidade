@@ -76,8 +76,19 @@ export interface Demonstracoes {
     resultado: number
     contas: Array<{ codigo: string; nome: string; linha: LinhaDre; valor: number }>
   }
+  balanco: { ate: string; ativo: LinhaBalancete[]; passivo: LinhaBalancete[]; patrimonioLiquido: LinhaBalancete[]; resultadoAcumulado: number; totalAtivo: number; totalPassivo: number; totalPatrimonioLiquido: number; confere: boolean }
   lancamentos: number
   fechadoAte?: string
+}
+
+export interface Razao {
+  conta: string
+  nome: string
+  saldoAnterior: number
+  movimentos: Array<{ data: string; historico: string; debito: number; credito: number; saldo: number; contrapartidas: string[] }>
+  totalDebitos: number
+  totalCreditos: number
+  saldoFinal: number
 }
 
 export const chamar = async <T = unknown>(nome: string, dados: unknown = {}): Promise<T> => (await httpsCallable<unknown, T>(functions, nome)(dados)).data

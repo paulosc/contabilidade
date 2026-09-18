@@ -5,7 +5,7 @@
 import { HttpsError, onCall } from 'firebase-functions/v2/https'
 import { REGIAO } from '../lib/config'
 import { auditar, exigirAdmin, exigirEquipe } from '../fiscal'
-import { ErroContabil, ErroOfx, conciliar, criarConta, demonstracoes, desfazerConciliacao, excluirLancamento, fecharPeriodo, ignorarMovimento, importarExtrato, lancar, prepararContabilidade } from './servico'
+import { ErroContabil, ErroOfx, conciliar, criarConta, demonstracoes, desfazerConciliacao, excluirLancamento, fecharPeriodo, ignorarMovimento, importarExtrato, lancar, prepararContabilidade, razao } from './servico'
 import type { Partida } from './razao'
 
 const traduzir = (e: unknown): never => {
@@ -110,6 +110,17 @@ export const demonstracoesContabeis = onCall({ region: REGIAO, memory: '512MiB',
   const d = (req.data ?? {}) as Record<string, unknown>
   try {
     return await demonstracoes(id, texto(d.de), texto(d.ate))
+  } catch (e) {
+    return traduzir(e)
+  }
+})
+
+/** Razão de uma conta analítica no período, com saldo corrente. */
+export const razaoContabil = onCall({ region: REGIAO, memory: '512MiB' }, async (req) => {
+  const { id } = await exigirEquipe(req.auth?.uid, req.data)
+  const d = (req.data ?? {}) as Record<string, unknown>
+  try {
+    return await razao(id, texto(d.conta), texto(d.de), texto(d.ate))
   } catch (e) {
     return traduzir(e)
   }

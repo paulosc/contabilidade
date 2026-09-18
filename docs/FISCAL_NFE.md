@@ -45,7 +45,7 @@ Detalhes que a NT impõe e que o adapter respeita:
 ## Fluxo
 
 ```
-IMOBILIÁRIA ──▶ CNPJ + certificado A1 ──▶ validação (backend)
+EMPRESA ──────▶ CNPJ + certificado A1 ──▶ validação (backend)
                                               │
                             Cloud Scheduler ──┼──▶ Cloud Function (gen2, southamerica-east1)
                                               │         │

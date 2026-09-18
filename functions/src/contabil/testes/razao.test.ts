@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert'
 import { describe, it } from 'node:test'
 import { PLANO_PADRAO, ancestrais, grupoDoCodigo } from '../planoDeContas'
-import { ErroContabil, balancete, dre, lancamentoDoExtrato, normalizarMemo, sugerirConta, validarLancamento, type Lancamento } from '../razao'
+import { ErroContabil, balancete, balancoPatrimonial, dre, razaoDaConta, lancamentoDoExtrato, normalizarMemo, sugerirConta, validarLancamento, type Lancamento } from '../razao'
 
 const contas = new Map(PLANO_PADRAO.map((c) => [c.codigo, c]))
 const BANCO = '1.1.1.02'
@@ -134,5 +134,50 @@ describe('sugestão de conta pelo memo', () => {
     assert.equal(sugerirConta('PIX RECEBIDO CLIENTE EXEMPLO LTDA 05/08', regras), '3.1.1.01')
     assert.equal(sugerirConta('PIX ENVIADO FULANO', regras), '3.2.1.02')
     assert.equal(sugerirConta('TED 123', regras), undefined)
+  })
+})
+
+describe('balanço patrimonial', () => {
+  const bp = balancoPatrimonial(PLANO_PADRAO, mes, '2026-08-31')
+  it('ativo = passivo + patrimônio líquido (com o resultado ainda não transferido)', () => {
+    assert.equal(bp.totalAtivo, 22870.1)
+    assert.equal(bp.totalPassivo, 1460)
+    assert.equal(bp.totalPatrimonioLiquido, 21410.1) // capital 10.000 + resultado 11.410,10
+    assert.equal(bp.resultadoAcumulado, 11410.1)
+    assert.equal(bp.confere, true)
+  })
+  it('separa passivo de patrimônio líquido e deixa receitas e despesas de fora', () => {
+    assert.ok(bp.passivo.some((l) => l.codigo === '2.1.2.01'))
+    assert.ok(!bp.passivo.some((l) => l.codigo.startsWith('2.3')))
+    assert.ok(bp.patrimonioLiquido.some((l) => l.codigo === '2.3.1.01'))
+    assert.ok(![...bp.ativo, ...bp.passivo, ...bp.patrimonioLiquido].some((l) => /^[34]/.test(l.codigo)))
+  })
+  it('conta zerada some: depois de pago o DAS, o passivo fica vazio', () => {
+    const depois = balancoPatrimonial(PLANO_PADRAO, mes, '2026-09-30')
+    assert.equal(depois.totalPassivo, 0)
+    assert.equal(depois.passivo.length, 0)
+    assert.equal(depois.confere, true)
+  })
+})
+
+describe('razão da conta', () => {
+  it('traz saldo anterior, movimentos em ordem de data e saldo corrente', () => {
+    const r = razaoDaConta(contas.get(BANCO)!, [...mes].reverse(), '2026-08-01', '2026-08-31')
+    assert.equal(r.saldoAnterior, 10000)
+    assert.deepEqual(r.movimentos.map((m) => m.saldo), [30000, 24400, 22900, 22870.1])
+    assert.equal(r.movimentos[0].contrapartidas[0], '3.1.1.01')
+    assert.equal(r.totalDebitos, 20000)
+    assert.equal(r.totalCreditos, 7129.9)
+    assert.equal(r.saldoFinal, 22870.1)
+  })
+  it('conta credora mostra o saldo no lado dela', () => {
+    const r = razaoDaConta(contas.get('2.1.2.01')!, mes, '2026-08-01', '2026-09-30')
+    assert.deepEqual(r.movimentos.map((m) => m.saldo), [1460, 0])
+    assert.equal(r.saldoFinal, 0)
+  })
+  it('conta sem movimento no período', () => {
+    const r = razaoDaConta(contas.get('4.2.2.01')!, mes, '2026-01-01', '2026-01-31')
+    assert.equal(r.movimentos.length, 0)
+    assert.equal(r.saldoFinal, 0)
   })
 })

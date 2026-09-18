@@ -1,24 +1,60 @@
 # Contabilidade
 
-Busca automática das notas fiscais eletrônicas emitidas **para o CNPJ da empresa**, direto no
-Web Service oficial `NFeDistribuicaoDFe` do Ambiente Nacional da NF-e. Sem scraping, sem
-automação de navegador, sem API de terceiro.
+Sistema para escritório de contabilidade: o mesmo usuário atende várias empresas (os clientes) e
+cada uma tem seus dados isolados. Tudo o que fala com o governo usa serviço oficial — sem scraping,
+sem automação de navegador, sem API de terceiro.
 
-Projeto Firebase: `contabilidade-a9d35` · Repositório: https://github.com/paulosc/contabilidade
+Projeto Firebase: `contabilidade-a9d35` · Site: https://contabilidade-a9d35.web.app ·
+Repositório: https://github.com/paulosc/contabilidade
+
+## O que o sistema faz
+
+| Módulo | O que faz | Onde está o código |
+| --- | --- | --- |
+| Carteira de clientes | Todas as empresas numa tela, com pendências de cada uma | `functions/src/escritorio/servico.ts` |
+| Obrigações | Calendário por perfil fiscal, prazo ajustado para dia útil, checklist auditado | `functions/src/escritorio/calendario.ts` |
+| Notas fiscais (NF-e) | Busca de hora em hora as NF-e emitidas para o CNPJ (`NFeDistribuicaoDFe`) | `functions/src/fiscal/sincronizacao.ts` |
+| Notas de serviço (NFS-e) | Recebe pelo ADN nacional, importa do município (ABRASF), emite, substitui e cancela no SEFIN; o DANFSe é gerado aqui a partir do XML | `functions/src/fiscal/{sincronizacaoNfse,emissao,dps,danfse}.ts` |
+| Simples Nacional | Conferência: RBT12, Fator R, alíquota efetiva, sublimite, ao lado do DAS oficial | `functions/src/escritorio/{simples,simplesTabelas}.ts` |
+| Guias a pagar | Lê o PDF oficial de DAS/DARF ou pede a guia à Receita (Integra Contador/Serpro); recibo de honorários com PIX; link de 7 dias com confirmação de leitura | `functions/src/fiscal/{guias,guiasServico,serproServico,pix,reciboHonorarios}.ts` |
+| Acompanhamento na Receita | Baixa automática de guias pagas, cabeçalhos da caixa postal do e-CAC, relatório de situação fiscal | `functions/src/fiscal/serproMonitor.ts` |
+| Documentos | O escritório pede, o cliente envia, a equipe confere; arquivo por competência | `functions/src/escritorio/documentos.ts` |
+| Contabilidade | Extrato OFX, conciliação com regras aprendidas, partidas dobradas, balancete, DRE, encerramento de período | `functions/src/contabil/` |
+| Folha | Cálculo de INSS/IRRF/FGTS por vigência, holerite em PDF, lucros distribuídos por sócio (Lei 15.270/2025) | `functions/src/folha/` |
+| Gestão do escritório | Contrato (Resolução CFC 1.590/2020), honorários recorrentes, equipe e acesso do cliente | `functions/src/escritorio/{contrato,gestao,membros}.ts` |
+
+**Não faz, de propósito:** abrir o conteúdo de mensagem da caixa postal do e-CAC (pela API isso dá
+ciência da intimação); calcular 13º, férias e rescisão (falta confirmar em fonte oficial se o
+desconto simplificado vale no 13º); enviar ao eSocial/EFD-Reinf (só pesquisado); consultar FGTS
+Digital, CRF, CNDT e DET (não têm API oficial).
+
+## Princípios
+
+- **Multiempresa**: tudo vive em `/empresas/{id}/...`. O `empresaId` que vem do navegador só diz de
+  qual empresa se trata; quem autoriza é o backend, conferindo `/empresas/{id}/membros/{uid}`.
+- **Papéis**: `admin` (tudo), `contador` e `assistente` (rotina do escritório), `cliente` (só guias,
+  notas e documentos da própria empresa). Ver `exigirAdmin`, `exigirEquipe` e `exigirMembro` em
+  `functions/src/fiscal/index.ts` e `ehAdmin`/`ehEquipe`/`ehMembro` em `firestore.rules`.
+- **Segredos**: certificado A1, senha e chaves do Serpro ficam cifrados em `/empresas/{id}/privado`
+  (negado a todo cliente) com a `FISCAL_CRYPTO_KEY` do Secret Manager. Nunca em `.env`, nunca em
+  log, nunca no frontend.
+- **Storage fechado**: nenhum arquivo é lido ou gravado direto pelo navegador; XML, PDF e documentos
+  entram e saem por callable, que confere o vínculo e audita.
+- **Regra fiscal só de fonte oficial**: cada tabela ou prazo cita a norma no próprio código, e os
+  cálculos são funções puras com teste.
+- **Requisição tarifada nunca roda sozinha**: tudo do Serpro é clique de administrador.
 
 ## Stack
 
 | Camada   | Tecnologia                                                        |
 | -------- | ----------------------------------------------------------------- |
-| Frontend | React 19 + TypeScript + Vite + Tailwind CSS 4 (SPA em `web/`)     |
+| Frontend | React 19 + TypeScript + Vite + Tailwind CSS 4 (SPA em `web/`), `react-hook-form` + `zod` |
 | Auth     | Firebase Authentication (e-mail/senha, Google, Apple)             |
 | Banco    | Cloud Firestore, multi-tenant por empresa, região São Paulo       |
-| Arquivos | Cloud Storage (XML das notas)                                     |
-| Backend  | Cloud Functions gen2, Node 22, TypeScript (`functions/`)          |
-| NF-e     | NFeDistribuicaoDFe / SEFAZ (adapter em `functions/src/providers/fiscal`) |
-| NFS-e    | ADN nacional, API de Distribuição dos Contribuintes (mesmo diretório) |
+| Arquivos | Cloud Storage (XML, PDF e documentos), acessado só pelo backend   |
+| Backend  | Cloud Functions gen2, Node 22, TypeScript (`functions/`), `southamerica-east1` |
 
-Documentação da integração: [`docs/FISCAL_NFE.md`](docs/FISCAL_NFE.md).
+Documentação da integração de NF-e/NFS-e: [`docs/FISCAL_NFE.md`](docs/FISCAL_NFE.md).
 
 ## Rodando localmente
 
@@ -35,26 +71,29 @@ npm run dev                  # http://localhost:5173
 cd functions
 cp .env.example .env
 npm install
-npm run build
-npm test                     # 112 testes (node:test), sem emulador
-npm run test:regras          # 21 testes de Security Rules no emulador (precisa de Java)
+npm test                     # compila e roda os testes (node:test), sem emulador
+npm run test:regras          # testes de Security Rules no emulador (precisa de Java)
 ```
 
 ## Deploy
 
+No Windows, use o script da raiz — ele faz o build do site, roda os testes e publica:
+
+```powershell
+.\publicar.ps1                 # tudo: functions, firestore (regras e índices), storage, hosting
+.\publicar.ps1 hosting         # só o site
+.\publicar.ps1 "functions:emitirNfse,firestore:rules"
+```
+
+O script define `FUNCTIONS_DISCOVERY_TIMEOUT`, porque o Firebase CLI espera só 10 s para o código
+das functions carregar e às vezes acusa `User code failed to load... Timeout after 10000` mesmo com
+o código carregando em ~1,5 s.
+
+Uma vez por projeto, a chave que cifra os certificados:
+
 ```bash
-# uma vez: a chave que cifra os certificados A1
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 firebase functions:secrets:set FISCAL_CRYPTO_KEY
-
-# regras e índices
-firebase deploy --only firestore,storage
-
-# frontend
-cd web && npm run build && cd .. && firebase deploy --only hosting
-
-# backend (exige plano Blaze)
-firebase deploy --only functions
 ```
 
 ## Estrutura
@@ -65,24 +104,22 @@ firebase deploy --only functions
 │   └── src/
 │       ├── auth/         # AuthProvider, guards de rota
 │       ├── components/   # UI básica, diálogos, layout
-│       ├── lib/          # firebase.ts, utils, helpers fiscais
-│       ├── pages/        # login, onboarding, painel, notas fiscais, configurações
+│       ├── lib/          # firebase.ts e helpers por assunto
+│       ├── pages/        # escritorio/, contabil/, fiscal/, guias/, folha/, configuracoes/
 │       ├── services/     # hooks do Firestore em tempo real
 │       └── types/        # tipos do domínio
 ├── functions/            # Cloud Functions
 │   └── src/
-│       ├── fiscal/       # certificado A1, NSU, sincronização, testes
-│       ├── providers/    # integrações atrás de interfaces
-│       └── triggers/     # claims de membro
+│       ├── fiscal/       # certificado, NF-e, NFS-e, guias, Serpro
+│       ├── escritorio/   # carteira, obrigações, Simples, documentos, contrato, equipe
+│       ├── contabil/     # OFX, plano de contas, razão, demonstrações
+│       ├── folha/        # tabelas por vigência, cálculo, holerite, lucros
+│       ├── providers/    # integrações externas atrás de interfaces
+│       └── triggers/     # espelho das empresas do usuário
 ├── docs/
+├── publicar.ps1          # deploy no Windows
 ├── firestore.rules       # segurança multi-tenant
+├── firestore.indexes.json
 ├── storage.rules
 └── firebase.json
 ```
-
-## Como funciona, em uma linha
-
-A empresa cadastra o certificado digital A1; de hora em hora duas Cloud Functions consultam a
-SEFAZ (NF-e de mercadoria) e o ADN (NFS-e de serviço) com esse mesmo certificado, respeitando as
-regras de NSU e a janela obrigatória de 1 hora, e gravam as notas no Firestore (metadados) e no
-Storage (XML). A tela acompanha por `onSnapshot`.

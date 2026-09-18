@@ -201,6 +201,87 @@ export function dre(contas: Conta[], lancamentos: Lancamento[], de: string, ate:
   }
 }
 
+export interface BalancoPatrimonial {
+  ate: string
+  ativo: LinhaBalancete[]
+  passivo: LinhaBalancete[]
+  patrimonioLiquido: LinhaBalancete[]
+  /** Resultado acumulado que ainda não foi transferido para o patrimônio líquido por lançamento de encerramento */
+  resultadoAcumulado: number
+  totalAtivo: number
+  totalPassivo: number
+  totalPatrimonioLiquido: number
+  confere: boolean
+}
+
+/** Balanço patrimonial na data: saldos acumulados de tudo o que foi lançado até ela. */
+export function balancoPatrimonial(contas: Conta[], lancamentos: Lancamento[], ate: string): BalancoPatrimonial {
+  const b = balancete(contas, lancamentos, '0001-01-01', ate)
+  const comSaldo = b.linhas.filter((l) => l.saldoFinal !== 0)
+  const ativo = comSaldo.filter((l) => l.codigo === '1' || l.codigo.startsWith('1.'))
+  const patrimonioLiquido = comSaldo.filter((l) => l.codigo === '2.3' || l.codigo.startsWith('2.3.'))
+  const passivo = comSaldo.filter((l) => (l.codigo.startsWith('2.') || l.codigo === '2') && l.codigo !== '2' && !patrimonioLiquido.includes(l))
+  const saldo = (codigo: string) => emCentavos(b.linhas.find((l) => l.codigo === codigo)?.saldoFinal ?? 0)
+  const totalPl = saldo('2.3') + emCentavos(b.fechamento.resultado)
+  const totalPassivo = saldo('2') - saldo('2.3')
+  return {
+    ate,
+    ativo,
+    passivo,
+    patrimonioLiquido,
+    resultadoAcumulado: b.fechamento.resultado,
+    totalAtivo: b.fechamento.ativo,
+    totalPassivo: emReais(totalPassivo),
+    totalPatrimonioLiquido: emReais(totalPl),
+    confere: emCentavos(b.fechamento.ativo) === totalPassivo + totalPl,
+  }
+}
+
+export interface MovimentoDoRazao {
+  data: string
+  historico: string
+  debito: number
+  credito: number
+  /** Saldo depois do movimento, na natureza da conta */
+  saldo: number
+  /** As outras contas do lançamento */
+  contrapartidas: string[]
+}
+
+export interface RazaoDaConta {
+  conta: string
+  saldoAnterior: number
+  movimentos: MovimentoDoRazao[]
+  totalDebitos: number
+  totalCreditos: number
+  saldoFinal: number
+}
+
+/** Razão de uma conta analítica no período, com saldo corrente. */
+export function razaoDaConta(conta: Conta, lancamentos: Lancamento[], de: string, ate: string): RazaoDaConta {
+  const sinal = conta.natureza === 'devedora' ? 1 : -1
+  let corrente = 0 // centavos, débito positivo
+  let totalDebitos = 0
+  let totalCreditos = 0
+  const movimentos: MovimentoDoRazao[] = []
+  const ordenados = [...lancamentos].filter((l) => l.data <= ate).sort((a, b) => a.data.localeCompare(b.data))
+  let saldoAnterior = 0
+  for (const l of ordenados) {
+    const d = l.partidas.filter((p) => p.conta === conta.codigo).reduce((s, p) => s + emCentavos(p.debito ?? 0), 0)
+    const c = l.partidas.filter((p) => p.conta === conta.codigo).reduce((s, p) => s + emCentavos(p.credito ?? 0), 0)
+    if (!d && !c) continue
+    corrente += d - c
+    if (l.data < de) {
+      saldoAnterior = corrente
+      continue
+    }
+    totalDebitos += d
+    totalCreditos += c
+    movimentos.push({ data: l.data, historico: l.historico, debito: emReais(d), credito: emReais(c), saldo: emReais(sinal * corrente || 0), contrapartidas: [...new Set(l.partidas.map((p) => p.conta).filter((x) => x !== conta.codigo))] })
+  }
+  return { conta: conta.codigo, saldoAnterior: emReais(sinal * saldoAnterior || 0), movimentos, totalDebitos: emReais(totalDebitos), totalCreditos: emReais(totalCreditos), saldoFinal: emReais(sinal * corrente || 0) }
+}
+
 /** Texto do extrato reduzido ao que identifica o favorecido: minúsculas, sem acento, sem números soltos. */
 export function normalizarMemo(memo: string): string {
   return memo
