@@ -14,7 +14,7 @@ import {
 import { collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../lib/firebase'
-import type { ComId, Empresa, Membro, Usuario, VinculoEmpresa } from '../types'
+import type { CadastroCnpj, ComId, Empresa, Endereco, Membro, Usuario, VinculoEmpresa } from '../types'
 
 export type ProvedorSocial = 'google' | 'apple'
 
@@ -25,6 +25,9 @@ export interface DadosNovaEmpresa {
   inscricaoEstadual?: string
   telefone?: string
   email?: string
+  nomeFantasia?: string
+  endereco?: Endereco
+  cadastro?: CadastroCnpj
 }
 
 interface AuthContextValue {

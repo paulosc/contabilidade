@@ -54,7 +54,7 @@ export function PerfilFiscalCard({ aoSalvar }: { aoSalvar?: () => void }) {
       regime: perfil?.regime ?? '',
       anexo: perfil?.anexo ?? '',
       sujeitoAoFatorR: perfil?.sujeitoAoFatorR ?? false,
-      inicioAtividade: perfil?.inicioAtividade ?? '',
+      inicioAtividade: perfil?.inicioAtividade ?? empresa?.cadastro?.dataAbertura?.slice(0, 7) ?? '',
       temEmpregados: perfil?.temEmpregados ?? false,
       temProLabore: perfil?.temProLabore ?? false,
       temReinf: perfil?.temReinf ?? false,
@@ -120,6 +120,11 @@ export function PerfilFiscalCard({ aoSalvar }: { aoSalvar?: () => void }) {
       <p className="mt-1 text-sm text-slate-500">
         {configurado ? resumo : 'Diga o regime e o que esta empresa tem. É isso que decide quais obrigações entram no calendário e como o Simples é conferido.'}
       </p>
+      {empresa?.cadastro?.cnaePrincipal && (!configurado || editando) && (
+        <p className="mt-2 text-xs text-slate-600">
+          Atividade principal no CNPJ: <strong>{empresa.cadastro.cnaePrincipal.codigo}</strong> · {empresa.cadastro.cnaePrincipal.descricao}. O anexo do Simples depende da atividade exercida — o sistema não o deduz do CNAE.
+        </p>
+      )}
       {!configurado && !ehAdmin && <p className="mt-2 text-sm text-amber-700">Só um administrador da empresa pode cadastrar o perfil fiscal.</p>}
 
       {erro && (

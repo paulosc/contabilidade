@@ -12,6 +12,7 @@ import { UFS } from '../lib/fiscal'
 import { FiscalCard } from './configuracoes/FiscalCard'
 import { ImportacaoMunicipalCard } from './configuracoes/ImportacaoMunicipalCard'
 import { EquipeCard } from './configuracoes/EquipeCard'
+import { CartaoCnpjUpload, cadastroDoCartao, type CartaoCnpj } from '../components/CartaoCnpjUpload'
 import { OPERACOES_AUDITADAS, type RegistroAuditoria } from '../types'
 
 const schema = z.object({
@@ -69,6 +70,30 @@ export function Configuracoes() {
     }
   }
 
+  /** Completa o cadastro com o comprovante do CNPJ — só se for o da própria empresa. */
+  async function aplicarCartao(c: CartaoCnpj) {
+    if (!empresa) return
+    if (c.cnpj !== somenteDigitos(empresa.cnpj ?? '')) {
+      setMsg({ tipo: 'erro', texto: `Este comprovante é do CNPJ ${formatCpfCnpj(c.cnpj)}, não o desta empresa (${formatCpfCnpj(empresa.cnpj ?? '')}). Nada foi alterado.` })
+      return
+    }
+    try {
+      await updateDoc(doc(db, 'empresas', empresa.id), {
+        nome: c.razaoSocial,
+        ...(c.nomeFantasia ? { nomeFantasia: c.nomeFantasia } : {}),
+        ...(c.endereco.uf ? { uf: c.endereco.uf } : {}),
+        ...(c.telefone ? { telefone: c.telefone } : {}),
+        ...(c.email ? { email: c.email } : {}),
+        endereco: c.endereco,
+        cadastro: cadastroDoCartao(c),
+        atualizadoEm: serverTimestamp(),
+      })
+      setMsg({ tipo: 'sucesso', texto: 'Cadastro atualizado com os dados do comprovante do CNPJ.' })
+    } catch (e) {
+      setMsg({ tipo: 'erro', texto: e instanceof Error ? e.message : 'Não foi possível atualizar.' })
+    }
+  }
+
   const registros = [...auditoria.dados]
     .sort((a, b) => (b.criadoEm?.toMillis?.() ?? 0) - (a.criadoEm?.toMillis?.() ?? 0))
     .slice(0, 15)
@@ -123,13 +148,81 @@ export function Configuracoes() {
               <Input type="email" {...register('email')} disabled={!ehAdmin} />
             </Campo>
             {ehAdmin && (
-              <div className="sm:col-span-6">
+              <div className="flex flex-wrap gap-2 sm:col-span-6">
                 <Botao type="submit" carregando={isSubmitting}>
                   Salvar dados
                 </Botao>
+                <CartaoCnpjUpload rotulo="Atualizar pelo cartão CNPJ (PDF)" aoLer={(c) => void aplicarCartao(c)} aoErro={(m) => setMsg(m ? { tipo: 'erro', texto: m } : null)} />
               </div>
             )}
           </form>
+
+          {empresa?.cadastro ? (
+            <dl className="mt-5 grid grid-cols-1 gap-x-6 gap-y-2 border-t border-slate-200 pt-4 text-sm sm:grid-cols-2">
+              {empresa.nomeFantasia && (
+                <div>
+                  <dt className="text-xs text-slate-500">Nome de fantasia</dt>
+                  <dd className="text-slate-900">{empresa.nomeFantasia}</dd>
+                </div>
+              )}
+              {empresa.cadastro.dataAbertura && (
+                <div>
+                  <dt className="text-xs text-slate-500">Abertura · porte</dt>
+                  <dd className="text-slate-900">
+                    {empresa.cadastro.dataAbertura.split('-').reverse().join('/')}
+                    {empresa.cadastro.porte ? ` · ${empresa.cadastro.porte}` : ''}
+                  </dd>
+                </div>
+              )}
+              {empresa.cadastro.naturezaJuridica && (
+                <div>
+                  <dt className="text-xs text-slate-500">Natureza jurídica</dt>
+                  <dd className="text-slate-900">
+                    {empresa.cadastro.naturezaJuridica.codigo} · {empresa.cadastro.naturezaJuridica.descricao}
+                  </dd>
+                </div>
+              )}
+              {empresa.cadastro.situacaoCadastral && (
+                <div>
+                  <dt className="text-xs text-slate-500">Situação cadastral</dt>
+                  <dd className="text-slate-900">{empresa.cadastro.situacaoCadastral}</dd>
+                </div>
+              )}
+              {empresa.endereco?.logradouro && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-slate-500">Endereço</dt>
+                  <dd className="text-slate-900">
+                    {[empresa.endereco.logradouro, empresa.endereco.numero, empresa.endereco.complemento, empresa.endereco.bairro, empresa.endereco.cidade && `${empresa.endereco.cidade}/${empresa.endereco.uf ?? ''}`, empresa.endereco.cep?.replace(/^(\d{5})(\d{3})$/, '$1-$2')]
+                      .filter(Boolean)
+                      .join(', ')}
+                  </dd>
+                </div>
+              )}
+              {empresa.cadastro.cnaePrincipal && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-slate-500">Atividade principal (CNAE)</dt>
+                  <dd className="text-slate-900">
+                    {empresa.cadastro.cnaePrincipal.codigo} · {empresa.cadastro.cnaePrincipal.descricao}
+                  </dd>
+                </div>
+              )}
+              {(empresa.cadastro.cnaesSecundarios?.length ?? 0) > 0 && (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-slate-500">Atividades secundárias</dt>
+                  <dd className="text-slate-700">
+                    {empresa.cadastro.cnaesSecundarios!.map((a) => (
+                      <span key={a.codigo} className="block">
+                        {a.codigo} · {a.descricao}
+                      </span>
+                    ))}
+                  </dd>
+                </div>
+              )}
+              {empresa.cadastro.emitidoEm && <p className="text-xs text-slate-500 sm:col-span-2">Dados do comprovante do CNPJ emitido em {empresa.cadastro.emitidoEm.split('-').reverse().join('/')}.</p>}
+            </dl>
+          ) : (
+            ehAdmin && <p className="mt-4 text-xs text-slate-500">Envie o cartão CNPJ em PDF (Comprovante de Inscrição e de Situação Cadastral, do site da Receita) para completar endereço, atividades (CNAE), natureza jurídica e data de abertura.</p>
+          )}
         </Card>
 
         <FiscalCard />

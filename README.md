@@ -11,6 +11,7 @@ Repositório: https://github.com/paulosc/contabilidade
 
 | Módulo | O que faz | Onde está o código |
 | --- | --- | --- |
+| Cadastro pelo cartão CNPJ | Lê o PDF do Comprovante de Inscrição e de Situação Cadastral e preenche a empresa (razão social, endereço, CNAEs, natureza jurídica, abertura); no cadastro novo e em Configurações | `functions/src/escritorio/cartaoCnpj.ts` |
 | Carteira de clientes | Todas as empresas numa tela, com pendências de cada uma | `functions/src/escritorio/servico.ts` |
 | Obrigações | Calendário por perfil fiscal, prazo ajustado para dia útil, checklist auditado | `functions/src/escritorio/calendario.ts` |
 | Notas fiscais (NF-e) | Busca de hora em hora as NF-e emitidas para o CNPJ (`NFeDistribuicaoDFe`) | `functions/src/fiscal/sincronizacao.ts` |

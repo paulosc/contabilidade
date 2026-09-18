@@ -68,6 +68,7 @@ export {
   criarSolicitacaoDeDocumento,
   avaliarSolicitacaoDeDocumento,
   gerarContratoDeServicos,
+  lerCartaoCnpjDoPdf,
   honorariosRecorrentes,
 } from './escritorio'
 export {

@@ -7,14 +7,16 @@ import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { REGIAO } from '../lib/config'
 import { auditar, exigirAdmin, exigirEquipe, exigirMembro, exigirVinculo } from '../fiscal'
 import { ErroDocumento, avaliarSolicitacao, baixarDocumento, criarSolicitacao, enviarDocumento, excluirDocumento } from './documentos'
+import { ErroCartaoCnpj, lerCartaoCnpj } from './cartaoCnpj'
 import { ErroContrato, type DadosContrato } from './contrato'
+import { textoDoPdf } from '../fiscal/guiasServico'
 import { gerarContrato, gerarHonorariosRecorrentes } from './gestao'
 import { ErroMembro, adicionarMembro, alterarPapel, removerMembro } from './membros'
 import { ErroEscritorio, apuracaoDoPeriodo, calendarioDaEmpresa, carteiraDoUsuario, marcarObrigacao } from './servico'
 
 const traduzir = (e: unknown): never => {
   if (e instanceof HttpsError) throw e
-  if (e instanceof ErroEscritorio || e instanceof ErroDocumento || e instanceof ErroMembro || e instanceof ErroContrato) throw new HttpsError('failed-precondition', e.message)
+  if (e instanceof ErroEscritorio || e instanceof ErroDocumento || e instanceof ErroMembro || e instanceof ErroContrato || e instanceof ErroCartaoCnpj) throw new HttpsError('failed-precondition', e.message)
   throw new HttpsError('internal', (e as Error).message)
 }
 
@@ -195,4 +197,27 @@ export const gerarContratoDeServicos = onCall({ region: REGIAO, timeoutSeconds: 
 /** Todo dia, 7h: gera o recibo de honorários do mês para quem ligou a recorrência. Não repete o que já existe. */
 export const honorariosRecorrentes = onSchedule({ schedule: 'every day 07:00', timeZone: 'America/Sao_Paulo', region: REGIAO, timeoutSeconds: 540, memory: '512MiB' }, async () => {
   await gerarHonorariosRecorrentes()
+})
+
+// ---------- cadastro da empresa pelo cartão CNPJ ----------
+
+const MAX_CARTAO_CNPJ = 3 * 1024 * 1024
+
+/**
+ * Lê o Comprovante de Inscrição e de Situação Cadastral (PDF da Receita) e devolve os dados da
+ * empresa. Serve ao cadastro de empresa nova, então só exige login — não há empresa ainda. Nada é
+ * gravado nem guardado: o PDF é lido em memória e descartado.
+ */
+export const lerCartaoCnpjDoPdf = onCall({ region: REGIAO, memory: '512MiB', timeoutSeconds: 60 }, async (req) => {
+  if (!req.auth?.uid) throw new HttpsError('unauthenticated', 'Faça login')
+  const base64 = (req.data as { conteudoBase64?: unknown } | undefined)?.conteudoBase64
+  if (typeof base64 !== 'string' || !base64) throw new HttpsError('invalid-argument', 'Envie o PDF do comprovante')
+  if (base64.length > Math.ceil((MAX_CARTAO_CNPJ * 4) / 3) + 4) throw new HttpsError('invalid-argument', 'Arquivo grande demais: o comprovante do CNPJ tem uma página só.')
+  try {
+    const pdf = Buffer.from(base64, 'base64')
+    if (pdf.subarray(0, 5).toString('latin1') !== '%PDF-') throw new ErroCartaoCnpj('O arquivo enviado não é um PDF.')
+    return lerCartaoCnpj(await textoDoPdf(pdf))
+  } catch (e) {
+    return traduzir(e)
+  }
 })

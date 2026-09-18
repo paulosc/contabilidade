@@ -32,8 +32,23 @@ export interface Usuario {
 }
 
 /** /empresas/{empresaId} */
+/** O que o Comprovante de Inscrição e de Situação Cadastral (cartão CNPJ) diz sobre a empresa */
+export interface CadastroCnpj {
+  /** 'AAAA-MM-DD' */
+  dataAbertura?: string
+  porte?: string
+  cnaePrincipal?: { codigo: string; descricao: string }
+  cnaesSecundarios?: Array<{ codigo: string; descricao: string }>
+  naturezaJuridica?: { codigo: string; descricao: string }
+  situacaoCadastral?: string
+  dataSituacaoCadastral?: string
+  /** 'AAAA-MM-DD' — data do comprovante de onde os dados vieram */
+  emitidoEm?: string
+}
+
 export interface Empresa {
   nome: string
+  nomeFantasia?: string
   /** CNPJ só com dígitos — é ele que é consultado na SEFAZ */
   cnpj: string
   /** UF da sede, usada no campo cUFAutor da consulta */
@@ -42,6 +57,7 @@ export interface Empresa {
   telefone?: string
   email?: string
   endereco?: Endereco
+  cadastro?: CadastroCnpj
   criadoPor: string
   criadoEm: Timestamp
   atualizadoEm?: Timestamp
