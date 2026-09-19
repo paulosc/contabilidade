@@ -140,11 +140,19 @@ export async function emitirNfse(
       throw new ErroEmissao('O prestador do DPS precisa ser o titular do certificado digital desta empresa (regra E0718).')
     }
 
-    // E0037/E0038: o município emissor precisa ter convênio ativo NESTE ambiente. Muitos
-    // municípios aderiram só em produção; conferir antes evita gastar número de DPS à toa.
+    // Consulta de convênio só para diagnóstico: o formato real da resposta ainda não foi visto e
+    // um 404 pode ser "rota inexistente" e não "município sem convênio". Quem decide é o SEFIN
+    // (E0037/E0038), cuja resposta é traduzida mais abaixo. Nunca bloqueia a emissão.
     const convenio = await cred.cliente.consultarConvenio(dados.codigoMunicipioEmissao)
-    logger.info('nfse: convênio do município', { empresaId, ambiente, municipio: dados.codigoMunicipioEmissao, situacao: convenio.situacao, status: convenio.status, fonte: convenio.fonte })
-    if (convenio.situacao === 'sem_convenio') throw new ErroEmissao(mensagemSemConvenio(dados.codigoMunicipioEmissao, ambiente))
+    logger.info('nfse: convênio do município (diagnóstico)', {
+      empresaId,
+      ambiente,
+      municipio: dados.codigoMunicipioEmissao,
+      situacao: convenio.situacao,
+      status: convenio.status,
+      fonte: convenio.fonte,
+      detalhe: convenio.detalhe?.slice(0, 500),
+    })
 
     const numeracao = await reservarNumero(empresaId)
     const completo: DadosDps = {
