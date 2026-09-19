@@ -48,6 +48,8 @@ export interface CadastroCnpj {
 
 export interface Empresa {
   nome: string
+  /** Fora da rotina: sem busca automática nem honorário recorrente; os dados continuam */
+  desativada?: boolean
   nomeFantasia?: string
   /** CNPJ só com dígitos — é ele que é consultado na SEFAZ */
   cnpj: string
@@ -280,6 +282,7 @@ export type OperacaoAuditada =
   | 'contrato_gerado'
   | 'lucro_registrado'
   | 'lucro_excluido'
+  | 'empresa_situacao'
 
 export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   certificado_cadastrado: 'Certificado cadastrado',
@@ -321,6 +324,7 @@ export const OPERACOES_AUDITADAS: Record<OperacaoAuditada, string> = {
   contrato_gerado: 'Contrato de serviços gerado',
   lucro_registrado: 'Lucro distribuído registrado',
   lucro_excluido: 'Lucro distribuído excluído',
+  empresa_situacao: 'Empresa desativada ou reativada',
 }
 
 /** /empresas/{id}/auditoriaFiscal/{id} */

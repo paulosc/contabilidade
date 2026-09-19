@@ -56,6 +56,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [authPronto, setAuthPronto] = useState(false)
   const [erroEmpresa, setErroEmpresa] = useState<AuthContextValue['erroEmpresa']>(null)
+  // Logo depois de criar a empresa, o perfil já aponta para ela (escrita local) antes de o
+  // servidor confirmar o lote com o vínculo de membro: a primeira leitura pode ser negada.
+  // O Firestore não retoma um listener negado, então ele é reaberto algumas vezes.
+  const [tentativaLeitura, setTentativaLeitura] = useState(0)
   const [vinculos, setVinculos] = useState<{ uid: string | null; lista: ComId<VinculoEmpresa>[] }>({ uid: null, lista: [] })
 
   // Perfil carregado e para qual uid ele vale (evita usar dado de outro usuário / estado antigo)
@@ -135,6 +139,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         publicar()
       },
       (err) => {
+        if (err.code === 'permission-denied' && tentativaLeitura < 4) {
+          setTimeout(() => setTentativaLeitura((t) => t + 1), 800 * (tentativaLeitura + 1))
+          return
+        }
         emp = null
         setErroEmpresa(err.code === 'permission-denied' ? 'sem-permissao' : 'falha')
         publicar()
@@ -155,7 +163,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       offEmpresa()
       offMembro()
     }
-  }, [user, empresaId])
+  }, [user, empresaId, tentativaLeitura])
+
+  // empresa diferente, contagem nova
+  useEffect(() => setTentativaLeitura(0), [empresaId])
 
   const perfilPronto = !user || perfilEstado.uid === user.uid
   const tenantPronto = !empresaId || tenantEstado.id === empresaId

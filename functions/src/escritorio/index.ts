@@ -5,6 +5,9 @@
 import { HttpsError, onCall, type CallableRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { REGIAO } from '../lib/config'
+import { db } from '../lib/admin'
+import { logger } from 'firebase-functions'
+import { FieldValue } from 'firebase-admin/firestore'
 import { auditar, exigirAdmin, exigirEquipe, exigirMembro, exigirVinculo } from '../fiscal'
 import { ErroDocumento, avaliarSolicitacao, baixarDocumento, criarSolicitacao, enviarDocumento, excluirDocumento } from './documentos'
 import { ErroCartaoCnpj, lerCartaoCnpj } from './cartaoCnpj'
@@ -220,4 +223,74 @@ export const lerCartaoCnpjDoPdf = onCall({ region: REGIAO, memory: '512MiB', tim
   } catch (e) {
     return traduzir(e)
   }
+})
+
+// ---------- exclusão de empresa cadastrada por engano ----------
+
+/** Coleções cuja presença indica que a empresa já tem uso — aí ela não sai por aqui. */
+const COLECOES_COM_DADOS = ['notasFiscais', 'notasServico', 'guias', 'documentos', 'solicitacoes', 'lancamentos', 'extrato', 'funcionarios', 'folhas', 'lucros']
+
+/**
+ * Exclui uma empresa VAZIA (cadastro duplicado ou por engano). Recusa se houver certificado,
+ * nota, guia, documento, lançamento ou folha: dado fiscal não se apaga por um botão. Só
+ * administrador, com a confirmação "EXCLUIR". Tira o vínculo de todos os membros e, se a
+ * empresa excluída era a aberta de alguém, abre outra dele.
+ */
+export const excluirEmpresaVazia = onCall({ region: REGIAO, timeoutSeconds: 120 }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  if ((req.data as { confirmacao?: unknown } | undefined)?.confirmacao !== 'EXCLUIR') throw new HttpsError('invalid-argument', 'Digite EXCLUIR para confirmar')
+  const ref = db.collection('empresas').doc(id)
+
+  const [privado, ...colecoes] = await Promise.all([ref.collection('privado').doc('fiscal').get(), ...COLECOES_COM_DADOS.map((c) => ref.collection(c).limit(1).get())])
+  const comDados = COLECOES_COM_DADOS.filter((_, i) => !colecoes[i].empty)
+  if (privado.exists) comDados.unshift('certificado digital')
+  if (comDados.length) throw new HttpsError('failed-precondition', `Esta empresa já tem dados (${comDados.join(', ')}) e não pode ser excluída por aqui.`)
+
+  const membros = await ref.collection('membros').get()
+  await db.recursiveDelete(ref)
+  for (const m of membros.docs) {
+    await db.collection('usuarios').doc(m.id).collection('empresas').doc(id).delete().catch(() => undefined)
+    const perfil = db.collection('usuarios').doc(m.id)
+    if ((await perfil.get()).data()?.empresaId === id) {
+      const outra = await perfil.collection('empresas').limit(1).get()
+      await perfil.set({ empresaId: outra.empty ? null : outra.docs[0].id }, { merge: true })
+    }
+  }
+  logger.info('empresa vazia excluída', { empresaId: id, uid: req.auth!.uid, email, membros: membros.size })
+  return { ok: true }
+})
+
+/**
+ * Desativa (ou reativa) a empresa: os dados ficam guardados, mas ela sai da rotina — a busca
+ * automática de NF-e e NFS-e para e o honorário recorrente deixa de ser gerado. O estado anterior
+ * dessas chaves é guardado para a reativação devolver tudo como estava.
+ */
+export const alterarSituacaoEmpresa = onCall({ region: REGIAO }, async (req) => {
+  const { id, email } = await exigirAdmin(req.auth?.uid, req.data)
+  const ativar = (req.data as { ativar?: unknown } | undefined)?.ativar === true
+  const ref = db.collection('empresas').doc(id)
+  const fiscalRef = ref.collection('configuracoes').doc('fiscal')
+  const honorariosRef = ref.collection('configuracoes').doc('honorarios')
+  const [empresa, fiscal, honorarios] = await Promise.all([ref.get(), fiscalRef.get(), honorariosRef.get()])
+  const d = (empresa.data() ?? {}) as { desativada?: boolean; antesDeDesativar?: { ativo?: boolean; nfseAtivo?: boolean; recorrente?: boolean } }
+
+  if (!ativar) {
+    if (d.desativada) return { ok: true }
+    const antes = { ativo: fiscal.data()?.ativo === true, nfseAtivo: fiscal.data()?.nfseAtivo === true, recorrente: honorarios.data()?.recorrente === true }
+    const lote = db.batch()
+    lote.set(ref, { desativada: true, desativadaEm: FieldValue.serverTimestamp(), desativadaPor: req.auth!.uid, antesDeDesativar: antes }, { merge: true })
+    if (fiscal.exists) lote.set(fiscalRef, { ativo: false, nfseAtivo: false }, { merge: true })
+    if (honorarios.exists) lote.set(honorariosRef, { recorrente: false }, { merge: true })
+    await lote.commit()
+  } else {
+    if (!d.desativada) return { ok: true }
+    const antes = d.antesDeDesativar ?? {}
+    const lote = db.batch()
+    lote.set(ref, { desativada: false, desativadaEm: FieldValue.delete(), desativadaPor: FieldValue.delete(), antesDeDesativar: FieldValue.delete() }, { merge: true })
+    if (fiscal.exists) lote.set(fiscalRef, { ativo: antes.ativo === true, nfseAtivo: antes.nfseAtivo === true }, { merge: true })
+    if (honorarios.exists) lote.set(honorariosRef, { recorrente: antes.recorrente === true }, { merge: true })
+    await lote.commit()
+  }
+  await auditar(id, 'empresa_situacao', req.auth!.uid, { email, detalhe: ativar ? 'reativada' : 'desativada' })
+  return { ok: true }
 })

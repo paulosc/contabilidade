@@ -26,6 +26,7 @@ export function Carteira() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [abrindo, setAbrindo] = useState<string | null>(null)
+  const [verDesativadas, setVerDesativadas] = useState(false)
 
   const carregar = useCallback(async () => {
     setCarregando(true)
@@ -53,7 +54,11 @@ export function Carteira() {
     }
   }
 
-  const empresas = dados?.empresas ?? []
+  const todas = dados?.empresas ?? []
+  const desativadas = todas.filter((e) => e.desativada)
+  // os números do topo contam só quem está na rotina
+  const empresas = todas.filter((e) => !e.desativada)
+  const listadas = verDesativadas ? todas : empresas
   const comPendencia = empresas.filter((e) => e.pendencias.length > 0).length
   const vencidas = empresas.reduce((s, e) => s + e.guias.vencidas, 0)
   const atrasadas = empresas.reduce((s, e) => s + (e.obrigacoes?.atrasadas ?? 0), 0)
@@ -91,7 +96,7 @@ export function Carteira() {
         <div className="flex justify-center py-20">
           <Spinner />
         </div>
-      ) : empresas.length === 0 ? (
+      ) : todas.length === 0 ? (
         <EstadoVazio icone={<Briefcase className="h-8 w-8" />} titulo="Nenhum cliente ainda" descricao="Cadastre a primeira empresa para começar." />
       ) : (
         <>
@@ -111,14 +116,23 @@ export function Carteira() {
             </div>
           )}
 
+          {desativadas.length > 0 && (
+            <div className="mb-3 text-right">
+              <button type="button" className="text-sm text-slate-600 underline" onClick={() => setVerDesativadas((v) => !v)}>
+                {verDesativadas ? 'Esconder as desativadas' : `Mostrar ${desativadas.length} desativada${desativadas.length > 1 ? 's' : ''}`}
+              </button>
+            </div>
+          )}
+
           <div className="space-y-3">
-            {empresas.map((e) => (
+            {listadas.map((e) => (
               <Card key={e.empresaId} className="p-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">
                       {e.nome}
                       {e.empresaId === empresa?.id && <Badge tom="azul">aberta agora</Badge>}
+                      {e.desativada && <Badge>desativada</Badge>}
                       {e.regime && <Badge>{REGIMES[e.regime]}</Badge>}
                     </p>
                     <p className="text-xs text-slate-500">{e.cnpj ? formatCpfCnpj(e.cnpj) : 'sem CNPJ'}</p>

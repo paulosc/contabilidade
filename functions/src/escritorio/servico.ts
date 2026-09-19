@@ -241,6 +241,8 @@ export async function marcarObrigacao(
 export interface ResumoDaEmpresa {
   empresaId: string
   nome: string
+  /** Desativada: fora da rotina (sem busca automática nem pendências), mas com os dados guardados */
+  desativada?: boolean
   cnpj?: string
   papel: string
   regime?: string
@@ -264,7 +266,10 @@ async function resumoDaEmpresa(empresaId: string, papel: string, hoje: string): 
     raizRef(empresaId).collection('receita').doc('caixaPostal').get(),
     raizRef(empresaId).collection('receita').doc('situacaoFiscal').get(),
   ])
-  const dados = (empresa.data() ?? {}) as { nome?: string; cnpj?: string }
+  const dados = (empresa.data() ?? {}) as { nome?: string; cnpj?: string; desativada?: boolean }
+  if (dados.desativada) {
+    return { empresaId, nome: dados.nome ?? 'Empresa', cnpj: dados.cnpj, papel, desativada: true, guias: { pendentes: 0, vencidas: 0, vencendo: 0, valorAberto: 0 }, honorariosEmAtraso: { quantidade: 0, valor: 0 }, pendencias: [] }
+  }
   const pendencias: string[] = []
 
   const guias = { pendentes: 0, vencidas: 0, vencendo: 0, valorAberto: 0, proximoVencimento: undefined as string | undefined }
@@ -347,6 +352,7 @@ export async function carteiraDoUsuario(uid: string): Promise<{ hoje: string; em
   const validos = vinculos.filter((v): v is { empresaId: string; papel: string } => v !== null)
   const empresas = await Promise.all(validos.map((v) => resumoDaEmpresa(v.empresaId, v.papel, hoje)))
   // quem tem mais pendência aparece primeiro
-  empresas.sort((a, b) => b.pendencias.length - a.pendencias.length || a.nome.localeCompare(b.nome, 'pt-BR'))
+  // desativadas por último; entre as ativas, quem tem mais pendência primeiro
+  empresas.sort((a, b) => Number(Boolean(a.desativada)) - Number(Boolean(b.desativada)) || b.pendencias.length - a.pendencias.length || a.nome.localeCompare(b.nome, 'pt-BR'))
   return { hoje, empresas, semAcesso: vinculos.length - validos.length }
 }

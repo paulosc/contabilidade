@@ -12,6 +12,7 @@ import { UFS } from '../lib/fiscal'
 import { FiscalCard } from './configuracoes/FiscalCard'
 import { ImportacaoMunicipalCard } from './configuracoes/ImportacaoMunicipalCard'
 import { EquipeCard } from './configuracoes/EquipeCard'
+import { SituacaoEmpresaCard } from './configuracoes/SituacaoEmpresaCard'
 import { CartaoCnpjUpload, cadastroDoCartao, type CartaoCnpj } from '../components/CartaoCnpjUpload'
 import { OPERACOES_AUDITADAS, type RegistroAuditoria } from '../types'
 
@@ -229,6 +230,8 @@ export function Configuracoes() {
         <ImportacaoMunicipalCard />
 
         <EquipeCard />
+
+        <SituacaoEmpresaCard />
 
         {ehAdmin && (
           <Card>

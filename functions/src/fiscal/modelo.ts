@@ -303,6 +303,7 @@ export type OperacaoAuditada =
   | 'contrato_gerado'
   | 'lucro_registrado'
   | 'lucro_excluido'
+  | 'empresa_situacao'
 
 export interface RegistroAuditoria {
   operacao: OperacaoAuditada

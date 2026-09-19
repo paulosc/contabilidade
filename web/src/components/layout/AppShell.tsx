@@ -179,6 +179,11 @@ export function AppShell() {
                 </Alerta>
               </div>
             )}
+            {empresa?.desativada && (
+              <div className="mb-4">
+                <Alerta tipo="info">Esta empresa está desativada: os dados estão aqui, mas a busca automática de notas e o honorário recorrente estão parados. Para reativar, vá em Configurações.</Alerta>
+              </div>
+            )}
             <Outlet />
           </div>
         </main>

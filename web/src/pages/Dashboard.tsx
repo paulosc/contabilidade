@@ -155,18 +155,24 @@ export function Dashboard() {
         ) : resumo.ultimas.length === 0 ? (
           <EstadoVazio
             icone={<FileWarning className="h-10 w-10" />}
-            titulo="Nenhuma nota ainda"
+            titulo={config?.ativo ? 'Nenhuma NF-e recebida' : 'Nenhuma nota ainda'}
             descricao={
               config?.ativo
-                ? 'A sincronização roda de hora em hora. Assim que a SEFAZ liberar documentos para este CNPJ, eles aparecem aqui.'
+                ? 'A busca automática está ligada e em dia: nenhum fornecedor emitiu NF-e (nota de mercadoria) para este CNPJ nos últimos 90 dias. As notas de serviço ficam em Notas de serviço.'
                 : 'Cadastre o certificado e ative a integração para começar.'
             }
             acao={
-              <Link to="/configuracoes">
-                <Botao>
-                  <ShieldCheck className="h-4 w-4" /> Configurar integração
-                </Botao>
-              </Link>
+              config?.ativo ? (
+                <Link to="/notas-servico">
+                  <Botao variante="secundario">Ver notas de serviço</Botao>
+                </Link>
+              ) : (
+                <Link to="/configuracoes">
+                  <Botao>
+                    <ShieldCheck className="h-4 w-4" /> Configurar integração
+                  </Botao>
+                </Link>
+              )
             }
           />
         ) : (

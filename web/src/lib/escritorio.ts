@@ -38,6 +38,7 @@ export interface PerfilFiscal {
 export interface ResumoDaEmpresa {
   empresaId: string
   nome: string
+  desativada?: boolean
   cnpj?: string
   papel: string
   regime?: Regime

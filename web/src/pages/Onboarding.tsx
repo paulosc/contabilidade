@@ -24,10 +24,11 @@ const schema = z.object({
 type Form = z.infer<typeof schema>
 
 export function Onboarding({ adicional = false }: { adicional?: boolean } = {}) {
-  const { criarEmpresa, user, sair } = useAuth()
+  const { criarEmpresa, user, sair, empresas, trocarEmpresa } = useAuth()
   const navigate = useNavigate()
   const [erro, setErro] = useState<string | null>(null)
   const [cartao, setCartao] = useState<CartaoCnpj | null>(null)
+  const [existente, setExistente] = useState<{ empresaId: string; nome: string } | null>(null)
 
   const {
     register,
@@ -51,6 +52,13 @@ export function Onboarding({ adicional = false }: { adicional?: boolean } = {}) 
 
   async function onSubmit(dados: Form) {
     setErro(null)
+    setExistente(null)
+    // o mesmo CNPJ duas vezes na carteira vira duas empresas separadas, com dados divididos
+    const repetida = empresas.find((e) => somenteDigitos(e.cnpj ?? '') === somenteDigitos(dados.cnpj))
+    if (repetida) {
+      setExistente({ empresaId: repetida.empresaId, nome: repetida.nome })
+      return
+    }
     try {
       // os dados do comprovante só valem se o CNPJ do formulário ainda for o dele
       const doCartao = cartao && cartao.cnpj === somenteDigitos(dados.cnpj) ? cartao : null
@@ -80,6 +88,18 @@ export function Onboarding({ adicional = false }: { adicional?: boolean } = {}) 
     >
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>
         {erro && <Alerta>{erro}</Alerta>}
+        {existente && (
+          <Alerta tipo="info">
+            Você já tem este CNPJ cadastrado: <strong>{existente.nome}</strong>. Não é preciso adicioná-lo de novo.{' '}
+            <button
+              type="button"
+              className="font-semibold underline"
+              onClick={() => void trocarEmpresa(existente.empresaId).then(() => navigate('/', { replace: true }))}
+            >
+              Abrir esta empresa
+            </button>
+          </Alerta>
+        )}
 
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
           <p className="mb-2 text-sm text-slate-600">
