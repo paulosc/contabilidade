@@ -16,7 +16,7 @@ import {
   validarDps,
   type DadosDps,
 } from '../dps'
-import { comprimir, descomprimir, interpretarConsultaDps, interpretarEmissao, interpretarEvento, resumirErros } from '../../providers/fiscal/sefinNacional'
+import { comDeclaracaoUtf8, comprimir, descomprimir, interpretarConsultaDps, interpretarEmissao, interpretarEvento, resumirErros } from '../../providers/fiscal/sefinNacional'
 import { gerarCertificadoDeTeste } from './apoio'
 
 const CHAVE = '31178012260748857000116000000000000926090381879606'
@@ -211,6 +211,13 @@ describe('assinatura XMLDSig', () => {
     assert.equal(verificarAssinatura(assinado, material.certificadoPem), true)
   })
 
+  it('a declaração UTF-8 acrescentada no envio não quebra a assinatura', () => {
+    const { xml, id } = montarDps(dadosBase())
+    const enviado = descomprimir(comprimir(assinarXml(xml, id, material)))
+    assert.ok(enviado.startsWith('<?xml version="1.0" encoding="UTF-8"?><DPS '))
+    assert.equal(verificarAssinatura(enviado, material.certificadoPem), true)
+  })
+
   it('a verificação falha se o conteúdo assinado for alterado', () => {
     const { xml, id } = montarDps(dadosBase())
     const assinado = assinarXml(xml, id, material).replace('<vServ>16990.00</vServ>', '<vServ>1.00</vServ>')
@@ -239,8 +246,15 @@ describe('assinatura XMLDSig', () => {
 describe('respostas do SEFIN Nacional', () => {
   const nfseXml = '<NFSe><infNFSe Id="NFS' + CHAVE + '"><nNFSe>10</nNFSe></infNFSe></NFSe>'
 
-  it('gzip + base64 vai e volta', () => {
-    assert.equal(descomprimir(comprimir('<a>ç</a>')), '<a>ç</a>')
+  it('gzip + base64 vai e volta, sempre com a declaração UTF-8 (sem ela o SEFIN rejeita com E1229)', () => {
+    assert.equal(descomprimir(comprimir('<a>ç</a>')), '<?xml version="1.0" encoding="UTF-8"?><a>ç</a>')
+  })
+
+  it('declaração UTF-8: acrescenta, troca a que declara outra codificação e tira o BOM', () => {
+    assert.equal(comDeclaracaoUtf8('<a/>'), '<?xml version="1.0" encoding="UTF-8"?><a/>')
+    assert.equal(comDeclaracaoUtf8('<?xml version="1.0" encoding="ISO-8859-1"?><a/>'), '<?xml version="1.0" encoding="UTF-8"?><a/>')
+    assert.equal(comDeclaracaoUtf8(String.fromCharCode(0xfeff) + '<a/>'), '<?xml version="1.0" encoding="UTF-8"?><a/>')
+    assert.equal(comDeclaracaoUtf8(comDeclaracaoUtf8('<a/>')), '<?xml version="1.0" encoding="UTF-8"?><a/>')
   })
 
   it('201: chave, id do DPS e a NFS-e descompactada', () => {

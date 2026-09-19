@@ -59,7 +59,19 @@ export interface CredenciaisSefin {
 
 const TIMEOUT_MS = 90_000
 
-export const comprimir = (xml: string): string => gzipSync(Buffer.from(xml, 'utf8')).toString('base64')
+/**
+ * Garante a declaração XML com a codificação no início do documento. Os bytes já são UTF-8, mas
+ * sem a declaração o SEFIN não reconhece a codificação e rejeita com E1229 ("XML não está
+ * utilizando codificação UTF8"). A declaração fica fora do trecho assinado (a assinatura cobre o
+ * elemento com o Id), então acrescentá-la depois de assinar não altera o digest.
+ */
+export function comDeclaracaoUtf8(xml: string): string {
+  const semBom = xml.replace(/^\uFEFF/, '').trimStart()
+  if (/^<\?xml\b/.test(semBom)) return semBom.replace(/^<\?xml[^?]*\?>/, '<?xml version="1.0" encoding="UTF-8"?>')
+  return `<?xml version="1.0" encoding="UTF-8"?>${semBom}`
+}
+
+export const comprimir = (xml: string): string => gzipSync(Buffer.from(comDeclaracaoUtf8(xml), 'utf8')).toString('base64')
 export const descomprimir = (b64: string): string => gunzipSync(Buffer.from(b64.replace(/\s/g, ''), 'base64')).toString('utf8')
 
 // ---------- leitura das respostas (puro, testável) ----------
