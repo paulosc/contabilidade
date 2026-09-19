@@ -321,16 +321,24 @@ export function NotasFiscaisList() {
       {carregando ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : dados.length === 0 ? (
-        <EstadoVazio
-          icone={<Receipt className="h-10 w-10" />}
-          titulo="Nenhuma nota fiscal ainda"
-          descricao="Assim que o certificado estiver ativo, a sincronização automática traz aqui as notas emitidas para o CNPJ da empresa."
-          acao={
-            <Link to="/configuracoes">
-              <Botao><Settings className="h-4 w-4" /> Configurar integração</Botao>
-            </Link>
-          }
-        />
+        config?.ativo && config.certificado ? (
+          <EstadoVazio
+            icone={<Receipt className="h-10 w-10" />}
+            titulo="Nenhuma NF-e recebida"
+            descricao="A busca automática está ligada e em dia, mas nenhum fornecedor emitiu NF-e (nota de mercadoria) para este CNPJ. A SEFAZ só entrega as notas dos últimos 90 dias. Notas de serviço (NFS-e) ficam em Notas de serviço."
+          />
+        ) : (
+          <EstadoVazio
+            icone={<Receipt className="h-10 w-10" />}
+            titulo="Nenhuma nota fiscal ainda"
+            descricao="Assim que o certificado estiver ativo, a sincronização automática traz aqui as notas emitidas para o CNPJ da empresa."
+            acao={
+              <Link to="/configuracoes">
+                <Botao><Settings className="h-4 w-4" /> Configurar integração</Botao>
+              </Link>
+            }
+          />
+        )
       ) : filtradas.length === 0 ? (
         <EstadoVazio titulo="Nenhum resultado" descricao="Ajuste os filtros." />
       ) : (
