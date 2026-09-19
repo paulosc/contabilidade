@@ -16,7 +16,7 @@ import {
   validarDps,
   type DadosDps,
 } from '../dps'
-import { comDeclaracaoUtf8, comprimir, descomprimir, interpretarConsultaDps, interpretarEmissao, interpretarEvento, resumirErros } from '../../providers/fiscal/sefinNacional'
+import { comDeclaracaoUtf8, comprimir, descomprimir, interpretarConsultaDps, interpretarConvenio, interpretarEmissao, interpretarEvento, resumirErros } from '../../providers/fiscal/sefinNacional'
 import { gerarCertificadoDeTeste } from './apoio'
 
 const CHAVE = '31178012260748857000116000000000000926090381879606'
@@ -297,5 +297,20 @@ describe('respostas do SEFIN Nacional', () => {
     assert.deepEqual(interpretarConsultaDps(404, ''), { status: 404, erros: [] })
     const r = interpretarConsultaDps(200, JSON.stringify({ chaveAcesso: CHAVE, idDps: 'DPS1' }))
     assert.equal(r.chaveAcesso, CHAVE)
+  })
+})
+
+describe('convênio do município emissor (E0037/E0038)', () => {
+  it('200 com os parâmetros: conveniado', () => {
+    assert.equal(interpretarConvenio(200, JSON.stringify({ parametrosConvenio: { aderenteEmissorNacional: 1 } })).situacao, 'conveniado')
+  })
+  it('404 ou mensagem de convênio inexistente/inativo: sem convênio', () => {
+    assert.equal(interpretarConvenio(404, '').situacao, 'sem_convenio')
+    assert.equal(interpretarConvenio(400, JSON.stringify({ erros: [{ codigo: 'E0037', descricao: 'O código do município emissor informado na DPS é inexistente no cadastro de convênio municipal do sistema nacional.' }] })).situacao, 'sem_convenio')
+    assert.equal(interpretarConvenio(200, JSON.stringify({ mensagem: 'O convênio do município ainda não está ativo no Sistema Nacional' })).situacao, 'sem_convenio')
+  })
+  it('erro de servidor ou resposta estranha não trava a emissão', () => {
+    assert.equal(interpretarConvenio(500, '<html>erro</html>').situacao, 'indeterminado')
+    assert.equal(interpretarConvenio(403, '').situacao, 'indeterminado')
   })
 })

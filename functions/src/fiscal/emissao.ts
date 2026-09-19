@@ -67,6 +67,13 @@ async function credenciais(empresaId: string, chaveMestra: string, ambiente: Amb
   }
 }
 
+/** Explicação para a tela quando o município não tem convênio no ambiente escolhido. */
+export function mensagemSemConvenio(codigoMunicipio: string, ambiente: AmbienteNfse): string {
+  return ambiente === 'homologacao'
+    ? `O município emissor (IBGE ${codigoMunicipio}) não aderiu ao ambiente de TESTE (produção restrita) do Sistema Nacional — muitos municípios aderem só à produção. Não dá para testar a emissão por lá; a alternativa é emitir em produção uma nota de valor baixo e cancelá-la em seguida, ou pedir à prefeitura a adesão à produção restrita.`
+    : `O município emissor (IBGE ${codigoMunicipio}) não tem convênio ativo com o Sistema Nacional NFS-e em produção. A emissão tem de ser pelo sistema próprio da prefeitura; confirme com ela.`
+}
+
 /** Reserva o próximo número da série numa transação: dois cliques não geram o mesmo DPS. */
 export async function reservarNumero(empresaId: string): Promise<NumeracaoEmissao> {
   const ref = configFiscalRef(empresaId)
@@ -133,6 +140,12 @@ export async function emitirNfse(
       throw new ErroEmissao('O prestador do DPS precisa ser o titular do certificado digital desta empresa (regra E0718).')
     }
 
+    // E0037/E0038: o município emissor precisa ter convênio ativo NESTE ambiente. Muitos
+    // municípios aderiram só em produção; conferir antes evita gastar número de DPS à toa.
+    const convenio = await cred.cliente.consultarConvenio(dados.codigoMunicipioEmissao)
+    logger.info('nfse: convênio do município', { empresaId, ambiente, municipio: dados.codigoMunicipioEmissao, situacao: convenio.situacao, status: convenio.status, fonte: convenio.fonte })
+    if (convenio.situacao === 'sem_convenio') throw new ErroEmissao(mensagemSemConvenio(dados.codigoMunicipioEmissao, ambiente))
+
     const numeracao = await reservarNumero(empresaId)
     const completo: DadosDps = {
       ...dados,
@@ -168,6 +181,9 @@ export async function emitirNfse(
       uid,
     })
     if (resposta.status !== 201 && resposta.status !== 200) {
+      if (resposta.erros.some((e) => e.codigo === 'E0037' || e.codigo === 'E0038')) {
+        throw new ErroEmissao(`${mensagemSemConvenio(dados.codigoMunicipioEmissao, ambiente)} (${resumirErros(resposta.erros)})`, resposta.erros)
+      }
       throw new ErroEmissao(`O SEFIN não gerou a nota: ${resumirErros(resposta.erros)}`, resposta.erros)
     }
     if (!resposta.chaveAcesso || !resposta.nfseXml) {

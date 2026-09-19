@@ -166,6 +166,37 @@ export function interpretarConsultaDps(status: number, corpo: string): ConsultaD
   }
 }
 
+export type SituacaoConvenio = 'conveniado' | 'sem_convenio' | 'indeterminado'
+
+export interface ConsultaConvenio {
+  situacao: SituacaoConvenio
+  status: number
+  /** Onde a consulta foi respondida (SEFIN ou ADN), para o diagnóstico */
+  fonte?: string
+  detalhe?: string
+}
+
+/**
+ * Resposta de GET /parametros_municipais/{codigoMunicipio}/convenio (Manual dos Contribuintes —
+ * Emissor Público API, item 1.2.1). Só afirma "sem convênio" quando o sistema diz isso com todas
+ * as letras (404, ou mensagem de convênio inexistente/inativo); o resto fica "indeterminado" e a
+ * emissão segue — quem decide, no fim, é a validação do próprio SEFIN.
+ */
+export function interpretarConvenio(status: number, corpo: string): ConsultaConvenio {
+  const o = json(corpo)
+  const texto = [...mensagens(o.erros), ...(o.erro && typeof o.erro === 'object' ? mensagens([o.erro]) : [])]
+    .map((e) => `${e.codigo} ${e.descricao} ${e.complemento ?? ''}`)
+    .join(' ')
+  const semConvenio = /E0037|E0038|inexistente|n[aã]o (est[aá] )?ativo|n[aã]o encontrad|n[aã]o possui conv[eê]nio/i
+  if (status === 404) return { situacao: 'sem_convenio', status, detalhe: texto || 'Município sem convênio neste ambiente.' }
+  if (status >= 200 && status < 300) {
+    if (semConvenio.test(texto) || semConvenio.test(corpo.slice(0, 500))) return { situacao: 'sem_convenio', status, detalhe: texto || corpo.slice(0, 200) }
+    return { situacao: 'conveniado', status, detalhe: corpo.slice(0, 300) }
+  }
+  if (semConvenio.test(texto)) return { situacao: 'sem_convenio', status, detalhe: texto }
+  return { situacao: 'indeterminado', status, detalhe: texto || corpo.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) }
+}
+
 /** Texto para a tela a partir das mensagens do SEFIN. */
 export const resumirErros = (erros: MensagemSefin[]): string =>
   erros.map((e) => `${e.codigo ? `${e.codigo} — ` : ''}${e.descricao}${e.complemento ? ` (${e.complemento})` : ''}`).join(' · ')
@@ -203,7 +234,11 @@ export class SefinNacionalClient {
   }
 
   private http(metodo: 'GET' | 'POST', caminho: string, corpoJson?: unknown): Promise<RespostaHttp> {
-    const url = new URL(this.base + caminho)
+    return this.httpUrl(metodo, this.base + caminho, corpoJson)
+  }
+
+  private httpUrl(metodo: 'GET' | 'POST', endereco: string, corpoJson?: unknown): Promise<RespostaHttp> {
+    const url = new URL(endereco)
     const corpo = corpoJson === undefined ? undefined : Buffer.from(JSON.stringify(corpoJson), 'utf8')
     return new Promise((resolve, reject) => {
       const req = httpsRequest(
@@ -260,6 +295,37 @@ export class SefinNacionalClient {
   async consultarNfse(chaveAcesso: string): Promise<RespostaEmissao> {
     const r = await this.http('GET', `/nfse/${chaveAcesso.replace(/\D/g, '')}`)
     return interpretarEmissao(r.status, r.corpo)
+  }
+
+  /**
+   * O município emissor tem convênio ativo NESTE ambiente? A rota do manual é
+   * GET /parametros_municipais/{codigoMunicipio}/convenio; ela é tentada no SEFIN e, se ele não a
+   * servir (404 de rota), na API de parametrização do ADN do mesmo ambiente. Erro de rede não
+   * impede a emissão: vira "indeterminado".
+   */
+  async consultarConvenio(codigoMunicipio: string): Promise<ConsultaConvenio> {
+    const codigo = codigoMunicipio.replace(/\D/g, '')
+    const caminho = `/parametros_municipais/${codigo}/convenio`
+    const adn = this.cfg.ambiente === 'producao' ? 'https://adn.nfse.gov.br/parametrizacao' : 'https://adn.producaorestrita.nfse.gov.br/parametrizacao'
+    const tentativas: Array<[string, string]> = [
+      ['SEFIN', this.base + caminho],
+      ['ADN', adn + caminho],
+      ['ADN', `${adn}/${codigo}/convenio`],
+    ]
+    let ultima: ConsultaConvenio = { situacao: 'indeterminado', status: 0 }
+    for (const [fonte, url] of tentativas) {
+      try {
+        const r = await this.httpUrl('GET', url)
+        const c = { ...interpretarConvenio(r.status, r.corpo), fonte }
+        // 404 sem corpo de negócio costuma ser "rota inexistente" neste host: tenta o próximo
+        const rotaInexistente = r.status === 404 && !/erro|conv[eê]nio|munic/i.test(r.corpo)
+        if (!rotaInexistente) return c
+        ultima = { ...c, situacao: 'indeterminado' }
+      } catch (e) {
+        ultima = { situacao: 'indeterminado', status: 0, fonte, detalhe: (e as Error).message }
+      }
+    }
+    return ultima
   }
 
   encerrar(): void {
